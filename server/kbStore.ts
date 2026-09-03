@@ -327,6 +327,45 @@ class KnowledgeBaseStore {
     return kb.specializedAi;
   }
 
+  createVersion(
+    kbId: string,
+    label: string,
+    customTag?: string,
+    makeActive: boolean = false
+  ): KnowledgeVersion {
+    const kb = this.kbs.get(kbId);
+    if (!kb) throw new Error(`Knowledge base ${kbId} not found`);
+
+    const nextNum = (kb.versions?.length || 0) + 1;
+    const versionTag = customTag || `v1.${nextNum - 1}`;
+    const totalPages = kb.documents.reduce((acc, d) => acc + (d.pageCount || 0), 0);
+
+    if (makeActive) {
+      kb.versions.forEach((v) => (v.isCurrent = false));
+    }
+
+    const newVersion: KnowledgeVersion = {
+      id: 'ver_' + Math.random().toString(36).substring(2, 8),
+      versionNumber: nextNum,
+      versionTag,
+      label: label.trim() || `Version ${versionTag}`,
+      timestamp: Date.now(),
+      documentCount: kb.documents.length,
+      totalPages,
+      documents: JSON.parse(JSON.stringify(kb.documents)),
+      isCurrent: makeActive,
+    };
+
+    if (makeActive) {
+      kb.currentVersion = versionTag;
+    }
+
+    kb.versions.unshift(newVersion);
+    kb.updatedAt = Date.now();
+    this.saveToDisk();
+    return newVersion;
+  }
+
   createVersionSnapshot(kbId: string, label: string): KnowledgeVersion {
     const kb = this.kbs.get(kbId);
     if (!kb) throw new Error(`Knowledge base ${kbId} not found`);

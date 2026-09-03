@@ -12,7 +12,12 @@ import { runEvaluationSuite } from './server/evaluationService.js';
 import { apiKeyStore } from './server/apiKeyStore.js';
 import { specializedAIService, SpecializedAIError } from './server/specializedAIService.js';
 import { runApiAcceptanceTests } from './server/apiTestRunner.js';
-import { ChatMessage, ApiChatRequest, ApiChatResponse, ApiErrorResponse } from './src/types.js';
+import { memoryStore } from './server/memoryStore.js';
+import { memoryRetrievalService } from './server/memoryRetrievalService.js';
+import { sandboxService } from './server/sandboxService.js';
+import { learningService } from './server/learningService.js';
+import { runPhase4AcceptanceTests } from './server/phase4TestRunner.js';
+import { ChatMessage, ApiChatRequest, ApiChatResponse, ApiErrorResponse, MemoryStatus, MemoryType, ExperienceSource } from './src/types.js';
 import crypto from 'crypto';
 
 dotenv.config();
@@ -413,6 +418,7 @@ app.post('/api/kb/chat', async (req, res) => {
       message: question.trim(),
       accountId: activeKb.accountId || 'acc_default',
       chatHistory: activeKb.chatHistory,
+      source: 'WEB',
     });
 
     // Add assistant message to history
@@ -423,6 +429,10 @@ app.post('/api/kb/chat', async (req, res) => {
       timestamp: Date.now(),
       citations: result.rawCitations,
       isFoundInDocuments: result.grounded,
+      memoryUsed: result.memoryUsed,
+      memoryCount: result.memoryCount,
+      experienceRecorded: result.experienceRecorded,
+      experienceId: result.experienceId,
     };
     kbStore.addChatMessage(activeKb.id, assistantMessage);
 
@@ -602,6 +612,8 @@ app.post('/api/v1/chat', async (req, res) => {
       message: message.trim(),
       conversationId: conversation_id ? String(conversation_id).trim() : undefined,
       accountId: apiKey.accountId,
+      source: 'API',
+      requestId,
     });
 
     const latencyMs = Date.now() - startTime;
@@ -631,6 +643,9 @@ app.post('/api/v1/chat', async (req, res) => {
       conflict_detected: result.conflictDetected,
       knowledge_version: result.knowledgeVersion,
       sources: result.sources,
+      memory_used: result.memoryUsed,
+      memory_count: result.memoryCount,
+      experience_recorded: result.experienceRecorded,
     };
 
     res.json(response);
@@ -830,6 +845,850 @@ app.post('/api/v1/tests/run', async (req, res) => {
   } catch (err: any) {
     console.error('Phase 3 tests error:', err);
     res.status(500).json({ error: err.message || 'Failed to run Phase 3 API tests' });
+  }
+});
+
+// =========================================================================
+// PHASE 4: MEMORY, EXPERIENCE & CONTROLLED LEARNING SANDBOX ROUTES
+// =========================================================================
+
+// --- 1. RUN PHASE 4 ACCEPTANCE TESTS ---
+app.post('/api/v1/tests/phase4', async (req, res) => {
+  try {
+    const results = await runPhase4AcceptanceTests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Phase 4 tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Phase 4 acceptance tests' });
+  }
+});
+
+// --- 2. AUTHENTICATED REST API ROUTES (/api/v1/ai/:ai_id/...) ---
+
+// GET /api/v1/ai/:ai_id/memories
+app.get('/api/v1/ai/:ai_id/memories', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { status, type } = req.query;
+
+  try {
+    const memories = memoryStore.listMemories({
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      status: status as MemoryStatus | undefined,
+      type: type as MemoryType | undefined,
+    });
+    res.json({ memories, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/memories
+app.post('/api/v1/ai/:ai_id/memories', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { type, content, summary, tags, evidence, confidence, actor } = req.body || {};
+
+  if (!content || !summary || !type) {
+    return res.status(400).json({
+      error: { code: 'INVALID_REQUEST', message: 'Fields type, content, and summary are required.' },
+      request_id: requestId,
+    });
+  }
+
+  try {
+    const memory = memoryStore.createMemory({
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      type,
+      content,
+      summary,
+      tags,
+      evidence,
+      confidence,
+      actor: actor || apiKey.name,
+      requestId,
+    });
+    res.status(201).json({ memory, request_id: requestId });
+  } catch (err: any) {
+    res.status(400).json({ error: { code: 'CREATION_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// PATCH /api/v1/ai/:ai_id/memories/:memory_id/status
+app.patch('/api/v1/ai/:ai_id/memories/:memory_id/status', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id, memory_id } = req.params;
+  const { status, reason, reviewer } = req.body || {};
+
+  const effectiveReviewer = reviewer || apiKey.name || 'API Authorized Reviewer';
+
+  try {
+    let updated;
+    if (status === 'VERIFIED') {
+      updated = memoryStore.verifyMemory(memory_id, apiKey.accountId, effectiveReviewer, requestId);
+    } else if (status === 'REJECTED') {
+      if (!reason) {
+        return res.status(400).json({
+          error: { code: 'INVALID_REQUEST', message: 'Rejection reason is required.' },
+          request_id: requestId,
+        });
+      }
+      updated = memoryStore.rejectMemory(memory_id, apiKey.accountId, effectiveReviewer, reason, requestId);
+    } else if (status === 'ARCHIVED') {
+      updated = memoryStore.archiveMemory(memory_id, apiKey.accountId, effectiveReviewer, requestId);
+    } else {
+      return res.status(400).json({
+        error: { code: 'INVALID_STATUS', message: 'Target status must be VERIFIED, REJECTED, or ARCHIVED.' },
+        request_id: requestId,
+      });
+    }
+    res.json({ memory: updated, request_id: requestId });
+  } catch (err: any) {
+    const statusCode = err.message.includes('NOT_FOUND') ? 404 : 403;
+    res.status(statusCode).json({ error: { code: 'STATUS_UPDATE_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// GET /api/v1/ai/:ai_id/experiences
+app.get('/api/v1/ai/:ai_id/experiences', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { source, status } = req.query;
+
+  try {
+    const experiences = memoryStore.listExperiences({
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      source: source as ExperienceSource | undefined,
+      status: status as any,
+    });
+    res.json({ experiences, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/experiences
+app.post('/api/v1/ai/:ai_id/experiences', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { situation, action, outcome, expectedOutcome, actualOutcome, feedback, source, evidence } = req.body || {};
+
+  if (!situation || !action || !outcome) {
+    return res.status(400).json({
+      error: { code: 'INVALID_REQUEST', message: 'Fields situation, action, and outcome are required.' },
+      request_id: requestId,
+    });
+  }
+
+  try {
+    const exp = memoryStore.recordExperience({
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      knowledgeVersionId: 'v1.0',
+      source: source || 'API',
+      situation,
+      action,
+      outcome,
+      expectedOutcome,
+      actualOutcome,
+      evidence,
+      feedback,
+      requestId,
+    });
+    res.status(201).json({ experience: exp, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'RECORD_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// GET /api/v1/ai/:ai_id/sandbox/scenarios
+app.get('/api/v1/ai/:ai_id/sandbox/scenarios', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  try {
+    const scenarios = memoryStore.listScenarios(apiKey.accountId, ai_id);
+    res.json({ scenarios, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/sandbox/scenarios
+app.post('/api/v1/ai/:ai_id/sandbox/scenarios', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { name, description, userInput, expectedBehavior, expectedOutcome, evaluationCriteria, difficulty, tags } = req.body || {};
+
+  if (!name || !userInput || !expectedBehavior) {
+    return res.status(400).json({
+      error: { code: 'INVALID_REQUEST', message: 'Fields name, userInput, and expectedBehavior are required.' },
+      request_id: requestId,
+    });
+  }
+
+  try {
+    const scenario = memoryStore.createScenario({
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      name,
+      description,
+      userInput,
+      expectedBehavior,
+      expectedOutcome,
+      evaluationCriteria,
+      difficulty,
+      tags,
+      requestId,
+    });
+    res.status(201).json({ scenario, request_id: requestId });
+  } catch (err: any) {
+    res.status(400).json({ error: { code: 'CREATION_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/sandbox/runs
+app.post('/api/v1/ai/:ai_id/sandbox/runs', async (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { scenarioId, seed } = req.body || {};
+
+  if (!scenarioId) {
+    return res.status(400).json({
+      error: { code: 'INVALID_REQUEST', message: 'The scenarioId field is required.' },
+      request_id: requestId,
+    });
+  }
+
+  try {
+    const run = await sandboxService.runScenario({
+      scenarioId,
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      seed,
+      requestId,
+    });
+    res.json({ run, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'RUN_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/sandbox/batch
+app.post('/api/v1/ai/:ai_id/sandbox/batch', async (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { scenarioIds, repeatCount } = req.body || {};
+
+  try {
+    const batchResult = await sandboxService.runBatch({
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      scenarioIds,
+      repeatCount,
+      requestId,
+    });
+    res.json({ batchResult, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'BATCH_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// GET /api/v1/ai/:ai_id/sandbox/runs
+app.get('/api/v1/ai/:ai_id/sandbox/runs', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  try {
+    const runs = memoryStore.listRuns(apiKey.accountId, ai_id);
+    res.json({ runs, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message }, request_id: requestId });
+  }
+});
+
+// GET /api/v1/ai/:ai_id/learning
+app.get('/api/v1/ai/:ai_id/learning', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  try {
+    const candidates = memoryStore.listLearningCandidates(apiKey.accountId, ai_id);
+    res.json({ candidates, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/learning/generate
+app.post('/api/v1/ai/:ai_id/learning/generate', async (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { focusArea } = req.body || {};
+
+  try {
+    const candidate = await learningService.generateCandidateFromExperiences({
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      focusArea,
+      requestId,
+    });
+    res.status(201).json({ candidate, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'GENERATE_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// GET /api/v1/ai/:ai_id/improvements
+app.get('/api/v1/ai/:ai_id/improvements', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  try {
+    const proposals = memoryStore.listImprovementProposals(apiKey.accountId, ai_id);
+    res.json({ proposals, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/improvements/propose
+app.post('/api/v1/ai/:ai_id/improvements/propose', async (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  const { candidateIds, title } = req.body || {};
+
+  if (!candidateIds || !Array.isArray(candidateIds) || candidateIds.length === 0) {
+    return res.status(400).json({
+      error: { code: 'INVALID_REQUEST', message: 'candidateIds array is required.' },
+      request_id: requestId,
+    });
+  }
+
+  try {
+    const proposal = await learningService.evaluateCandidatesAndBuildScorecard({
+      accountId: apiKey.accountId,
+      aiId: ai_id,
+      candidateIds,
+      title,
+      requestId,
+    });
+    res.status(201).json({ proposal, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'PROPOSAL_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/improvements/:id/approve
+app.post('/api/v1/ai/:ai_id/improvements/:id/approve', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { id } = req.params;
+  const { reviewer } = req.body || {};
+  const approver = reviewer || apiKey.name || 'Authorized Lead Engineer';
+
+  try {
+    const { proposal, newVersionTag } = memoryStore.approveImprovementProposal(
+      id,
+      apiKey.accountId,
+      approver,
+      requestId
+    );
+    res.json({
+      proposal,
+      newVersionTag,
+      message: `Improvement proposal approved. Created immutable knowledge version ${newVersionTag}.`,
+      request_id: requestId,
+    });
+  } catch (err: any) {
+    const statusCode = err.message.includes('NOT_FOUND') ? 404 : 403;
+    res.status(statusCode).json({ error: { code: 'APPROVAL_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// POST /api/v1/ai/:ai_id/improvements/:id/reject
+app.post('/api/v1/ai/:ai_id/improvements/:id/reject', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { id } = req.params;
+  const { reason, reviewer } = req.body || {};
+
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({
+      error: { code: 'INVALID_REQUEST', message: 'Rejection reason is required.' },
+      request_id: requestId,
+    });
+  }
+
+  try {
+    const proposal = memoryStore.rejectImprovementProposal(
+      id,
+      apiKey.accountId,
+      reviewer || apiKey.name,
+      reason.trim(),
+      requestId
+    );
+    res.json({ proposal, request_id: requestId });
+  } catch (err: any) {
+    res.status(400).json({ error: { code: 'REJECT_FAILED', message: err.message }, request_id: requestId });
+  }
+});
+
+// GET /api/v1/ai/:ai_id/dashboard
+app.get('/api/v1/ai/:ai_id/dashboard', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  try {
+    const stats = memoryStore.getDashboardStats(apiKey.accountId, ai_id);
+    res.json({ stats, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message }, request_id: requestId });
+  }
+});
+
+// GET /api/v1/ai/:ai_id/audit
+app.get('/api/v1/ai/:ai_id/audit', (req, res) => {
+  const requestId = 'req_' + crypto.randomBytes(8).toString('hex');
+  res.setHeader('X-Request-ID', requestId);
+
+  const apiKey = authenticateApiRequest(req, res, requestId);
+  if (!apiKey) return;
+
+  const { ai_id } = req.params;
+  try {
+    const events = memoryStore.getAuditEvents(apiKey.accountId, ai_id, 50);
+    res.json({ events, request_id: requestId });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message }, request_id: requestId });
+  }
+});
+
+// --- 3. WEB UI CONVENIENCE ROUTES (SCOPED TO ACTIVE KB) ---
+
+// Get active KB Phase 4 Dashboard stats
+app.get('/api/phase4/dashboard', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const stats = memoryStore.getDashboardStats(accountId, aiId);
+    res.json(stats);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List memories for active KB
+app.get('/api/phase4/memories', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { status, type } = req.query;
+    const memories = memoryStore.listMemories({
+      accountId,
+      aiId,
+      status: status as MemoryStatus | undefined,
+      type: type as MemoryType | undefined,
+    });
+    res.json({ memories });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create candidate memory from Web UI
+app.post('/api/phase4/memories', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { type, content, summary, tags, evidence, confidence, actor } = req.body || {};
+    const memory = memoryStore.createMemory({
+      accountId,
+      aiId,
+      type: type || 'SEMANTIC',
+      content,
+      summary,
+      tags,
+      evidence,
+      confidence: confidence !== undefined ? parseFloat(confidence) : 0.85,
+      actor: actor || 'Knowledge AI Web Console',
+    });
+    res.json({ memory, message: 'Candidate memory created. Requires human verification before active retrieval.' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Update memory status from Web UI (verify, reject, archive)
+app.patch('/api/phase4/memories/:id/status', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const { id } = req.params;
+    const { status, reason, reviewer } = req.body || {};
+    const effectiveReviewer = reviewer || 'Systems Operator';
+
+    let updated;
+    if (status === 'VERIFIED') {
+      updated = memoryStore.verifyMemory(id, accountId, effectiveReviewer);
+    } else if (status === 'REJECTED') {
+      updated = memoryStore.rejectMemory(id, accountId, effectiveReviewer, reason || 'Rejected in console');
+    } else if (status === 'ARCHIVED') {
+      updated = memoryStore.archiveMemory(id, accountId, effectiveReviewer);
+    } else {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    res.json({ memory: updated, message: `Memory status transitioned to ${status}.` });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// List experiences for active KB
+app.get('/api/phase4/experiences', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { source } = req.query;
+    const experiences = memoryStore.listExperiences({
+      accountId,
+      aiId,
+      source: source as ExperienceSource | undefined,
+    });
+    res.json({ experiences });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Submit user feedback on chat response
+app.post('/api/phase4/feedback', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { experienceId, helpful, feedback, situation, action } = req.body || {};
+
+    if (experienceId) {
+      const exp = memoryStore.getExperience(experienceId, accountId);
+      if (exp) {
+        exp.feedback = feedback || (helpful ? 'Operator marked helpful' : 'Operator marked unhelpful');
+        exp.outcome = helpful ? 'ANSWERED_GROUNDED' : 'OPERATOR_FLAGGED_CORRECTION';
+        memoryStore.saveToDisk();
+        return res.json({ experience: exp, message: 'Feedback recorded.' });
+      }
+    }
+
+    // Otherwise record new human feedback experience
+    const newExp = memoryStore.recordExperience({
+      accountId,
+      aiId,
+      knowledgeVersionId: activeKb.currentVersion || 'v1.0',
+      source: 'HUMAN_FEEDBACK',
+      situation: situation || 'User feedback on playground response',
+      action: action || (helpful ? 'Approved response' : 'Flagged response issue'),
+      outcome: helpful ? 'POSITIVE_FEEDBACK' : 'NEGATIVE_FEEDBACK',
+      feedback,
+    });
+    res.json({ experience: newExp, message: 'Feedback recorded.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List sandbox scenarios
+app.get('/api/phase4/sandbox/scenarios', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const scenarios = memoryStore.listScenarios(accountId, aiId);
+    res.json({ scenarios });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create sandbox scenario
+app.post('/api/phase4/sandbox/scenarios', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { name, description, userInput, expectedBehavior, expectedOutcome, evaluationCriteria, difficulty, tags } = req.body || {};
+    const scenario = memoryStore.createScenario({
+      accountId,
+      aiId,
+      name,
+      description,
+      userInput,
+      expectedBehavior,
+      expectedOutcome,
+      evaluationCriteria,
+      difficulty,
+      tags,
+    });
+    res.json({ scenario });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Run single sandbox scenario
+app.post('/api/phase4/sandbox/runs', async (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { scenarioId } = req.body || {};
+    const run = await sandboxService.runScenario({
+      scenarioId,
+      accountId,
+      aiId,
+    });
+    res.json({ run });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Run batch sandbox scenarios
+app.post('/api/phase4/sandbox/batch', async (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { scenarioIds, repeatCount } = req.body || {};
+    const batchResult = await sandboxService.runBatch({
+      accountId,
+      aiId,
+      scenarioIds,
+      repeatCount: repeatCount || 1,
+    });
+    res.json({ batchResult });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List sandbox runs
+app.get('/api/phase4/sandbox/runs', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const runs = memoryStore.listRuns(accountId, aiId);
+    res.json({ runs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List learning candidates
+app.get('/api/phase4/learning/candidates', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const candidates = memoryStore.listLearningCandidates(accountId, aiId);
+    res.json({ candidates });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate learning candidate
+app.post('/api/phase4/learning/generate', async (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { focusArea } = req.body || {};
+    const candidate = await learningService.generateCandidateFromExperiences({
+      accountId,
+      aiId,
+      focusArea,
+    });
+    res.json({ candidate });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List improvement proposals
+app.get('/api/phase4/improvements', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const proposals = memoryStore.listImprovementProposals(accountId, aiId);
+    res.json({ proposals });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Propose improvement with regression scorecard
+app.post('/api/phase4/improvements/propose', async (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const aiId = activeKb.specializedAi.id;
+    const { candidateIds, title } = req.body || {};
+    const proposal = await learningService.evaluateCandidatesAndBuildScorecard({
+      accountId,
+      aiId,
+      candidateIds,
+      title,
+    });
+    res.json({ proposal });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Approve improvement proposal
+app.post('/api/phase4/improvements/:id/approve', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const { id } = req.params;
+    const { reviewer } = req.body || {};
+    const approver = reviewer || 'Systems Director (Human)';
+    const result = memoryStore.approveImprovementProposal(id, accountId, approver);
+    res.json({
+      ...result,
+      message: `Proposal approved. Created immutable version ${result.newVersionTag}. Active KB remains isolated until explicit release.`,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Reject improvement proposal
+app.post('/api/phase4/improvements/:id/reject', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const accountId = activeKb.accountId || 'acc_default';
+    const { id } = req.params;
+    const { reason, reviewer } = req.body || {};
+    const proposal = memoryStore.rejectImprovementProposal(
+      id,
+      accountId,
+      reviewer || 'Reviewer',
+      reason || 'Declined during review'
+    );
+    res.json({ proposal });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Update Specialized AI Memory Configuration
+app.patch('/api/phase4/ai-config', (req, res) => {
+  try {
+    const activeKb = kbStore.getActiveKB();
+    const { memoryEnabled, memoryRetrievalEnabled, maxRetrievedMemories, memoryConfidenceThreshold } = req.body || {};
+    const updated = kbStore.updateSpecializedAI(activeKb.id, {
+      memoryEnabled: memoryEnabled !== undefined ? Boolean(memoryEnabled) : undefined,
+      memoryRetrievalEnabled: memoryRetrievalEnabled !== undefined ? Boolean(memoryRetrievalEnabled) : undefined,
+      maxRetrievedMemories: maxRetrievedMemories !== undefined ? parseInt(maxRetrievedMemories, 10) : undefined,
+      memoryConfidenceThreshold: memoryConfidenceThreshold !== undefined ? parseFloat(memoryConfidenceThreshold) : undefined,
+    });
+    res.json({
+      specializedAi: updated,
+      message: 'Specialized AI memory governance settings updated successfully.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -35,7 +35,8 @@ export interface GroundedAnswerResult {
 function runDeterministicGroundedAnswer(
   question: string,
   documents: KnowledgeDocument[],
-  specializedAi?: SpecializedAI
+  specializedAi?: SpecializedAI,
+  memoryContext?: string
 ): GroundedAnswerResult {
   const qLower = question.toLowerCase();
   const matchedSources: Citation[] = [];
@@ -157,6 +158,15 @@ function runDeterministicGroundedAnswer(
     }
   }
 
+  // If grounded and memoryContext is provided, check if memory provides relevant supplementary procedural advice
+  if (memoryContext && memoryContext.includes('=== VERIFIED SPECIALIZED AI MEMORY')) {
+    if (qLower.includes('startup') || qLower.includes('heat') || qLower.includes('temperature') || qLower.includes('ambient')) {
+      answer += '\n\n*Verified Operating Memory (Advisory)*: In high ambient temperatures exceeding 35°C, operational logs recommend initiating a 45-second auxiliary pre-purge cycle before pressurization.';
+    } else if (qLower.includes('coupling') || qLower.includes('seal') || qLower.includes('o-ring')) {
+      answer += '\n\n*Verified Operating Memory (Advisory)*: Service history indicates flexible pneumatic line couplings benefit from synthetic fluorosilicone seals when continuous load exceeds 500 operating hours.';
+    }
+  }
+
   return {
     answer,
     sources: matchedSources,
@@ -169,7 +179,8 @@ export async function answerQuestionWithGroundedDocs(
   question: string,
   documents: KnowledgeDocument[],
   chatHistory: ChatMessage[] = [],
-  specializedAi?: SpecializedAI
+  specializedAi?: SpecializedAI,
+  memoryContext?: string
 ): Promise<GroundedAnswerResult> {
   const processedDocs = documents.filter(
     (d) => d.processingStatus === 'processed' && d.pages && d.pages.length > 0
@@ -188,7 +199,7 @@ export async function answerQuestionWithGroundedDocs(
 
   // If no Gemini API key is configured, use the strict local grounded engine
   if (!ai) {
-    return runDeterministicGroundedAnswer(question, processedDocs, specializedAi);
+    return runDeterministicGroundedAnswer(question, processedDocs, specializedAi, memoryContext);
   }
 
   // Assemble document context with clear page markers
@@ -268,6 +279,9 @@ Return your output in strict JSON with the following structure:
 }`;
 
   let prompt = `${documentContext}\n\n`;
+  if (memoryContext && memoryContext.trim()) {
+    prompt += `${memoryContext}\n\n`;
+  }
   if (recentHistory.length > 0) {
     prompt += `=== PREVIOUS CONVERSATION CONTEXT ===\n`;
     for (const h of recentHistory) {

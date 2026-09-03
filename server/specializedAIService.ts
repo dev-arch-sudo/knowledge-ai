@@ -1,7 +1,9 @@
 import crypto from 'crypto';
 import { kbStore } from './kbStore.js';
 import { answerQuestionWithGroundedDocs } from './geminiService.js';
-import { ApiSource, Citation, ChatMessage, KnowledgeDocument } from '../src/types.js';
+import { ApiSource, Citation, ChatMessage, KnowledgeDocument, ExperienceSource } from '../src/types.js';
+import { memoryRetrievalService } from './memoryRetrievalService.js';
+import { memoryStore } from './memoryStore.js';
 
 export class SpecializedAIError extends Error {
   public code: string;
@@ -22,6 +24,8 @@ export interface SpecializedAIAnswerParams {
   accountId?: string;
   versionTag?: string;
   chatHistory?: ChatMessage[];
+  source?: ExperienceSource;
+  requestId?: string;
 }
 
 export interface SpecializedAIAnswerResult {
@@ -36,6 +40,10 @@ export interface SpecializedAIAnswerResult {
   sources: ApiSource[];
   rawCitations: Citation[];
   engineUsed: string;
+  memoryUsed: boolean;
+  memoryCount: number;
+  experienceRecorded: boolean;
+  experienceId?: string;
 }
 
 // In-memory conversation-to-account/ai mapping for tenant isolation validation
@@ -46,7 +54,7 @@ export class SpecializedAIService {
    * Unified grounding & answering method used by Web UI, REST API, and Evaluation Runner.
    */
   async answer(params: SpecializedAIAnswerParams): Promise<SpecializedAIAnswerResult> {
-    const { aiId, message, conversationId, accountId, versionTag, chatHistory = [] } = params;
+    const { aiId, message, conversationId, accountId, versionTag, chatHistory = [], source = 'WEB', requestId } = params;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       throw new SpecializedAIError('INVALID_REQUEST', 400, 'The message field is required.');
@@ -137,15 +145,27 @@ export class SpecializedAIService {
       );
     }
 
-    // 6. Execute Grounded AI Engine (with AI Persona, response style, strict refusal guards)
+    // 6. Retrieve Eligible Verified Memory (Phase 4 Governed Memory Subsystem)
+    const effectiveAccountId = kb.accountId || accountId || 'acc_default';
+    const retrievedMemory = memoryRetrievalService.retrieveRelevantMemories({
+      query: message.trim(),
+      aiId: ai.id,
+      accountId: effectiveAccountId,
+      specializedAi: ai,
+      documents: activeDocs,
+      includeCandidates: source === 'SANDBOX',
+    });
+
+    // 7. Execute Grounded AI Engine (with AI Persona, response style, strict refusal guards & verified memory)
     const groundedResult = await answerQuestionWithGroundedDocs(
       message.trim(),
       activeDocs,
       chatHistory,
-      ai
+      ai,
+      retrievedMemory.memoryContextString
     );
 
-    // 7. Refusal & Grounding Semantics
+    // 8. Refusal & Grounding Semantics
     const answerText = groundedResult.answer || '';
     const textLower = answerText.toLowerCase();
 
@@ -160,14 +180,15 @@ export class SpecializedAIService {
     const isGrounded = groundedResult.isFoundInDocuments && !isExplicitRefusal;
     const isRefused = isExplicitRefusal;
 
-    // 8. Conflict Detection
+    // 9. Conflict Detection
     const hasConflict =
+      retrievedMemory.conflictDetected ||
       textLower.includes('conflict') ||
       textLower.includes('contradiction') ||
       textLower.includes('discrepancy between documents');
 
-    // 9. Format structured sources (Never fabricate)
-    const formattedSources: ApiSource[] = isRefused
+    // 10. Format structured sources (Authoritative knowledge vs verified memory)
+    const knowledgeSources: ApiSource[] = isRefused
       ? []
       : groundedResult.sources.map((src) => ({
           document_id: src.documentId,
@@ -175,9 +196,42 @@ export class SpecializedAIService {
           page: typeof src.pageNumber === 'number' ? src.pageNumber : parseInt(String(src.pageNumber), 10) || undefined,
           section: src.sectionHeading || undefined,
           excerpt: src.snippet || undefined,
+          source_type: 'knowledge',
         }));
 
+    const memoryUsed = isGrounded && retrievedMemory.memories.length > 0;
+    const allSources: ApiSource[] = isRefused
+      ? []
+      : [...knowledgeSources, ...(memoryUsed ? retrievedMemory.memorySources : [])];
+
+    const allRawCitations: Citation[] = isRefused
+      ? []
+      : [...groundedResult.sources, ...(memoryUsed ? retrievedMemory.rawMemoryCitations : [])];
+
     const responseId = 'res_' + crypto.randomBytes(8).toString('hex');
+
+    // 11. Governed Experience Recording (Phase 4)
+    let recordedExpId: string | undefined;
+    try {
+      const exp = memoryStore.recordExperience({
+        accountId: effectiveAccountId,
+        aiId: ai.id,
+        knowledgeVersionId: resolvedVersion,
+        conversationId,
+        source,
+        situation: message.substring(0, 500),
+        action: answerText.substring(0, 500),
+        outcome: isRefused ? 'REFUSED_OUT_OF_DOMAIN' : (hasConflict ? 'CONFLICT_DETECTED' : 'ANSWERED_GROUNDED'),
+        expectedOutcome: 'Grounded document response with verified memory integration.',
+        actualOutcome: isGrounded ? 'Grounded response generated.' : 'Negative refusal triggered.',
+        evidence: allSources.map((s) => s.document_name).slice(0, 5),
+        status: 'RECORDED',
+        requestId,
+      });
+      recordedExpId = exp.id;
+    } catch (expErr) {
+      console.warn('Failed to record experience:', expErr);
+    }
 
     return {
       id: responseId,
@@ -188,9 +242,13 @@ export class SpecializedAIService {
       refused: isRefused,
       conflictDetected: hasConflict,
       knowledgeVersion: resolvedVersion,
-      sources: formattedSources,
-      rawCitations: groundedResult.sources,
+      sources: allSources,
+      rawCitations: allRawCitations,
       engineUsed: groundedResult.engineUsed,
+      memoryUsed,
+      memoryCount: memoryUsed ? retrievedMemory.memories.length : 0,
+      experienceRecorded: Boolean(recordedExpId),
+      experienceId: recordedExpId,
     };
   }
 }

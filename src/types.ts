@@ -34,6 +34,10 @@ export interface ChatMessage {
   timestamp: number;
   citations?: Citation[];
   isFoundInDocuments?: boolean;
+  memoryUsed?: boolean;
+  memoryCount?: number;
+  userFeedback?: 'helpful' | 'unhelpful' | 'correct' | 'incorrect' | 'procedure_worked' | 'procedure_failed';
+  experienceId?: string;
 }
 
 export type ResponseStyle = 'concise' | 'detailed' | 'bullet-points' | 'executive-summary';
@@ -50,6 +54,13 @@ export interface SpecializedAI {
   citationMode: CitationMode;
   strictRefusal: boolean;
   confidenceThreshold?: number;
+  // Phase 4 Memory Configuration
+  memoryEnabled?: boolean;
+  memoryRetrievalEnabled?: boolean;
+  allowedMemoryTypes?: MemoryType[];
+  maxRetrievedMemories?: number;
+  memoryConfidenceThreshold?: number;
+  allowCandidateGeneration?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -168,6 +179,9 @@ export interface ApiSource {
   page?: number;
   section?: string;
   excerpt?: string;
+  source_type?: 'knowledge' | 'memory';
+  memory_id?: string;
+  memory_type?: MemoryType;
 }
 
 export interface ApiChatRequest {
@@ -187,6 +201,10 @@ export interface ApiChatResponse {
   conflict_detected?: boolean;
   knowledge_version: string;
   sources: ApiSource[];
+  // Phase 4 Metadata
+  memory_used?: boolean;
+  memory_count?: number;
+  experience_recorded?: boolean;
 }
 
 export interface ApiErrorResponse {
@@ -201,7 +219,17 @@ export interface ApiErrorResponse {
       | 'RATE_LIMITED'
       | 'PROCESSING_ERROR'
       | 'AI_ERROR'
-      | 'INTERNAL_ERROR';
+      | 'INTERNAL_ERROR'
+      | 'MEMORY_NOT_FOUND'
+      | 'MEMORY_ACCESS_DENIED'
+      | 'EXPERIENCE_NOT_FOUND'
+      | 'SANDBOX_SCENARIO_NOT_FOUND'
+      | 'SANDBOX_RUN_FAILED'
+      | 'LEARNING_CANDIDATE_NOT_FOUND'
+      | 'IMPROVEMENT_NOT_FOUND'
+      | 'APPROVAL_NOT_AUTHORIZED'
+      | 'REGRESSION_DETECTED'
+      | 'INVALID_STATE_TRANSITION';
     message: string;
   };
   request_id?: string;
@@ -215,4 +243,240 @@ export interface ApiUsageStats {
   averageLatencyMs: number;
   recentLogs: ApiUsage[];
 }
+
+// ==========================================
+// PHASE 4: MEMORY, EXPERIENCE & SANDBOX TYPES
+// ==========================================
+
+export type MemoryType = 'EPISODIC' | 'SEMANTIC' | 'PROCEDURAL' | 'FEEDBACK';
+export type MemoryStatus = 'CANDIDATE' | 'VERIFIED' | 'REJECTED' | 'ARCHIVED';
+
+export interface Memory {
+  id: string;
+  accountId: string;
+  aiId: string;
+  type: MemoryType;
+  content: string;
+  summary: string;
+  evidence: string[];
+  confidence: number;
+  sourceExperienceIds: string[];
+  sourceDocumentIds?: string[];
+  sourceConversationIds?: string[];
+  knowledgeVersionId: string;
+  status: MemoryStatus;
+  scope: 'global' | 'ai_local';
+  createdAt: number;
+  updatedAt: number;
+  verifiedAt?: number | null;
+  verifiedBy?: string | null;
+  archivedAt?: number | null;
+  rejectionReason?: string | null;
+}
+
+export type ExperienceSource =
+  | 'WEB'
+  | 'API'
+  | 'SANDBOX'
+  | 'EVALUATION'
+  | 'SYSTEM'
+  | 'HUMAN_FEEDBACK';
+
+export type ExperienceStatus = 'RECORDED' | 'EVALUATED' | 'FLAGGED' | 'ARCHIVED';
+
+export interface Experience {
+  id: string;
+  accountId: string;
+  aiId: string;
+  knowledgeVersionId: string;
+  conversationId?: string;
+  messageId?: string;
+  source: ExperienceSource;
+  situation: string;
+  action: string;
+  outcome: string;
+  expectedOutcome?: string;
+  actualOutcome?: string;
+  feedback?: string;
+  evidence?: string[];
+  evaluationId?: string;
+  status: ExperienceStatus;
+  sandboxScenarioId?: string;
+  sandboxRunId?: string;
+  createdAt: number;
+}
+
+export type ScenarioDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
+export type ScenarioStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+
+export interface SandboxScenario {
+  id: string;
+  accountId: string;
+  aiId: string;
+  name: string;
+  description: string;
+  initialState?: string;
+  userInput: string;
+  expectedBehavior: string;
+  expectedOutcome: string;
+  evaluationCriteria: string;
+  difficulty: ScenarioDifficulty;
+  tags: string[];
+  status: ScenarioStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type SandboxRunStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type SandboxRunOutcome = 'SUCCESS' | 'FAILURE' | 'PARTIAL';
+
+export interface SandboxActionLog {
+  timestamp: number;
+  type: string;
+  detail: string;
+}
+
+export interface SandboxRun {
+  id: string;
+  accountId: string;
+  aiId: string;
+  scenarioId: string;
+  knowledgeVersionId: string;
+  actions: SandboxActionLog[];
+  observations: string[];
+  finalOutcome: SandboxRunOutcome;
+  score: number; // 0-100
+  evaluationId?: string;
+  status: SandboxRunStatus;
+  seed?: string;
+  error?: string;
+  actualOutput?: string;
+  createdAt: number;
+  completedAt?: number;
+}
+
+export type LearningCandidateStatus =
+  | 'DRAFT'
+  | 'UNDER_EVALUATION'
+  | 'READY_FOR_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'ARCHIVED';
+
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface LearningCandidate {
+  id: string;
+  accountId: string;
+  aiId: string;
+  sourceExperienceIds: string[];
+  sourceMemoryIds: string[];
+  proposedChange: string;
+  rationale: string;
+  evidence: string;
+  confidence: number;
+  expectedBenefit: string;
+  riskLevel: RiskLevel;
+  evaluationId?: string;
+  status: LearningCandidateStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ImprovementProposalStatus =
+  | 'DRAFT'
+  | 'EVALUATING'
+  | 'READY_FOR_APPROVAL'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'ARCHIVED';
+
+export interface ImprovementScorecard {
+  baselineScore: number;
+  candidateScore: number;
+  difference: number;
+  regressionCount: number;
+  newSuccesses: number;
+  newFailures: number;
+  riskLevel: RiskLevel;
+  confidence: number;
+  sampleSize: number;
+  groundingBefore: number;
+  groundingAfter: number;
+  refusalBefore: number;
+  refusalAfter: number;
+  citationBefore: number;
+  citationAfter: number;
+}
+
+export interface ImprovementProposal {
+  id: string;
+  accountId: string;
+  aiId: string;
+  currentVersionId: string;
+  candidateIds: string[];
+  title: string;
+  proposedChanges: string;
+  rationale: string;
+  evidence: string;
+  expectedBenefit: string;
+  riskAssessment: string;
+  evaluationId?: string;
+  scorecard: ImprovementScorecard;
+  status: ImprovementProposalStatus;
+  approvedBy?: string | null;
+  approvedAt?: number | null;
+  rejectedBy?: string | null;
+  rejectedAt?: number | null;
+  rejectionReason?: string | null;
+  targetVersionTag?: string;
+  createdVersionTag?: string;
+  createdAt: number;
+}
+
+export type AuditEventAction =
+  | 'MEMORY_CREATED'
+  | 'MEMORY_VERIFIED'
+  | 'MEMORY_REJECTED'
+  | 'MEMORY_ARCHIVED'
+  | 'EXPERIENCE_RECORDED'
+  | 'LEARNING_CANDIDATE_CREATED'
+  | 'LEARNING_CANDIDATE_EVALUATED'
+  | 'IMPROVEMENT_PROPOSAL_CREATED'
+  | 'IMPROVEMENT_PROPOSAL_APPROVED'
+  | 'IMPROVEMENT_PROPOSAL_REJECTED'
+  | 'SANDBOX_RUN_STARTED'
+  | 'SANDBOX_RUN_COMPLETED'
+  | 'SANDBOX_RUN_FAILED'
+  | 'VERSION_CREATED_FROM_IMPROVEMENT';
+
+export interface AuditEvent {
+  id: string;
+  accountId: string;
+  actor: string;
+  aiId: string;
+  resourceId: string;
+  action: AuditEventAction;
+  timestamp: number;
+  requestId?: string;
+  details?: Record<string, any>;
+}
+
+export interface Phase4DashboardStats {
+  verifiedMemoriesCount: number;
+  totalMemoriesCount: number;
+  candidateMemoriesCount: number;
+  rejectedMemoriesCount: number;
+  archivedMemoriesCount: number;
+  experiencesCount: number;
+  realExperiencesCount: number;
+  sandboxExperiencesCount: number;
+  sandboxRunsCount: number;
+  sandboxSuccessRate: number;
+  learningCandidatesCount: number;
+  pendingProposalsCount: number;
+  approvedImprovementsCount: number;
+  recentAuditEvents: AuditEvent[];
+}
+
 
