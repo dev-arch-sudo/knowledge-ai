@@ -1,0 +1,15 @@
+[
+  {
+    "id": "usage_67b25f3c855ca75d",
+    "requestId": "req_test_observability",
+    "apiKeyId": "key_2d78da1377c97ccb",
+    "accountId": "acc_default",
+    "aiId": "ai_ee63ekp8",
+    "endpoint": "/api/v1/chat",
+    "timestamp": 1788456645141,
+    "status": 200,
+    "latencyMs": 142,
+    "refused": false,
+    "grounded": true
+  }
+]

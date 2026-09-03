@@ -1,0 +1,92 @@
+[
+  {
+    "id": "key_starter_prod",
+    "accountId": "acc_default",
+    "name": "Default Production Backend",
+    "keyPrefix": "kn_live_",
+    "keyHash": "b3f39bc013151683ef1988863b182e6e2dd7c95483e62f2ec24cb3cb9f24da3c",
+    "maskedKey": "kn_live_••••••••••••d819",
+    "environment": "live",
+    "scopes": [
+      "chat:read",
+      "ai:read",
+      "knowledge:read"
+    ],
+    "status": "active",
+    "createdAt": 1788456634373,
+    "lastUsedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "key_starter_test",
+    "accountId": "acc_default",
+    "name": "Default Test Playground Key",
+    "keyPrefix": "kn_test_",
+    "keyHash": "9de94b0b8b24a099fda8dbc26588d78fe6b713e63543857c26da542823a25783",
+    "maskedKey": "kn_test_••••••••••••5170",
+    "environment": "test",
+    "scopes": [
+      "chat:read",
+      "ai:read",
+      "knowledge:read"
+    ],
+    "status": "active",
+    "createdAt": 1788456634373,
+    "lastUsedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "key_2d78da1377c97ccb",
+    "accountId": "acc_default",
+    "name": "Acceptance Test Key A",
+    "keyPrefix": "kn_test_",
+    "keyHash": "3f80e72e7f86b27cea8e306c9ca9e37ffc8507ba90533e7412a418d21962c58a",
+    "maskedKey": "kn_test_••••••••••••838e",
+    "environment": "test",
+    "scopes": [
+      "chat:read",
+      "ai:read",
+      "knowledge:read"
+    ],
+    "status": "active",
+    "createdAt": 1788456645135,
+    "lastUsedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "key_9440304454f47476",
+    "accountId": "acc_tenant_beta",
+    "name": "Acceptance Test Key B (Tenant B)",
+    "keyPrefix": "kn_test_",
+    "keyHash": "43b1322cb81f425c2d56c482c50df126a30e43b07d9d38b0f2c050e2414f50b1",
+    "maskedKey": "kn_test_••••••••••••8e98",
+    "environment": "test",
+    "scopes": [
+      "chat:read",
+      "ai:read",
+      "knowledge:read"
+    ],
+    "status": "active",
+    "createdAt": 1788456645135,
+    "lastUsedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "key_9fe0e39517f70ece",
+    "accountId": "acc_default",
+    "name": "Key To Revoke",
+    "keyPrefix": "kn_live_",
+    "keyHash": "d2c83449fff42f2760ffa775d5365c3f14a2ee076f103a0f7997e3ca4095f9e7",
+    "maskedKey": "kn_live_••••••••••••62a8",
+    "environment": "live",
+    "scopes": [
+      "chat:read",
+      "ai:read",
+      "knowledge:read"
+    ],
+    "status": "revoked",
+    "createdAt": 1788456645136,
+    "lastUsedAt": null,
+    "expiresAt": null
+  }
+]

@@ -1,0 +1,6 @@
+{
+  "name": "Knowledge AI",
+  "description": "Developer platform and document-grounded Specialized AI service with secure REST APIs, key management, knowledge versioning, and evaluation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

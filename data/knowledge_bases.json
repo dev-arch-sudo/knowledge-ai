@@ -1,0 +1,656 @@
+{
+  "activeKbId": "kb_default",
+  "kbs": [
+    {
+      "id": "kb_default",
+      "name": "Default Knowledge Base",
+      "description": "Core repository for operational specifications, technical manuals, and safety protocols.",
+      "createdDate": 1788455860577,
+      "updatedAt": 1788455884702,
+      "currentVersion": "v1.0",
+      "versions": [
+        {
+          "id": "ver_05ot1m",
+          "versionNumber": 1,
+          "versionTag": "v1.0",
+          "label": "Initial Knowledge Base setup",
+          "timestamp": 1788455860577,
+          "documentCount": 0,
+          "totalPages": 0,
+          "documents": [],
+          "isCurrent": true
+        }
+      ],
+      "documents": [],
+      "processingStatus": "empty",
+      "chatHistory": [],
+      "specializedAi": {
+        "id": "ai_nfgd2ing",
+        "kbId": "kb_default",
+        "name": "Default Knowledge Base Specialist",
+        "description": "Specialized AI grounded exclusively in the knowledge base \"Default Knowledge Base\".",
+        "roleDefinition": "You are an expert domain specialist and advisor for Default Knowledge Base. Provide rigorous, document-grounded answers based exclusively on the provided reference materials.",
+        "systemPromptModifier": "Maintain strict accuracy and professional tone. Always prioritize safety standards, technical specifications, and explicit facts from the documents.",
+        "responseStyle": "detailed",
+        "citationMode": "standard",
+        "strictRefusal": true,
+        "confidenceThreshold": 85,
+        "createdAt": 1788455860577,
+        "updatedAt": 1788455860577
+      },
+      "testCases": [
+        {
+          "id": "tc_1",
+          "kbId": "kb_default",
+          "category": "grounded",
+          "question": "What pressure does the machine operate at under nominal conditions?",
+          "expectedBehavior": "Must cite exact grounded operating pressure (50 PSI) from equipment manual.",
+          "expectedKeywords": [
+            "50 PSI",
+            "PSI"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_2",
+          "kbId": "kb_default",
+          "category": "grounded",
+          "question": "Who is authorized and responsible for maintaining the system?",
+          "expectedBehavior": "Must identify the Facility Chief Engineer and authorized technicians.",
+          "expectedKeywords": [
+            "Chief Engineer",
+            "engineer"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_3",
+          "kbId": "kb_default",
+          "category": "cross-document",
+          "question": "According to both the manual and the safety protocols, what checklist steps must be verified before initial startup?",
+          "expectedBehavior": "Must synthesize items from both manual and safety documents (e.g. couplings, ventilation, eye protection, electrical grounding).",
+          "expectedKeywords": [
+            "ventilation",
+            "couplings",
+            "inspection",
+            "safety"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_4",
+          "kbId": "kb_default",
+          "category": "negative-refusal",
+          "question": "What is the current population of Nepal?",
+          "expectedBehavior": "Must strictly refuse because general world knowledge is outside the uploaded documents.",
+          "mustRefuse": true
+        },
+        {
+          "id": "tc_5",
+          "kbId": "kb_default",
+          "category": "negative-refusal",
+          "question": "What was the third-quarter corporate EBITDA for 2024?",
+          "expectedBehavior": "Must explicitly state that financial metrics are not present in the uploaded documents.",
+          "mustRefuse": true
+        }
+      ],
+      "evaluationRuns": [
+        {
+          "id": "eval_sja044kk",
+          "kbId": "kb_default",
+          "versionTag": "v1.0",
+          "timestamp": 1788455884702,
+          "totalTests": 5,
+          "passedCount": 2,
+          "failedCount": 3,
+          "accuracyScore": 40,
+          "groundedScore": 0,
+          "crossDocScore": 0,
+          "refusalScore": 100,
+          "results": [
+            {
+              "testCaseId": "tc_1",
+              "question": "What pressure does the machine operate at under nominal conditions?",
+              "category": "grounded",
+              "expectedBehavior": "Must cite exact grounded operating pressure (50 PSI) from equipment manual.",
+              "actualAnswer": "I couldn't find enough information to answer this question because no processed documents are currently in this knowledge base.",
+              "citations": [],
+              "isFoundInDocuments": false,
+              "passed": false,
+              "reason": "No documents in knowledge base to support answer.",
+              "latencyMs": 1
+            },
+            {
+              "testCaseId": "tc_2",
+              "question": "Who is authorized and responsible for maintaining the system?",
+              "category": "grounded",
+              "expectedBehavior": "Must identify the Facility Chief Engineer and authorized technicians.",
+              "actualAnswer": "I couldn't find enough information to answer this question because no processed documents are currently in this knowledge base.",
+              "citations": [],
+              "isFoundInDocuments": false,
+              "passed": false,
+              "reason": "No documents in knowledge base to support answer.",
+              "latencyMs": 0
+            },
+            {
+              "testCaseId": "tc_3",
+              "question": "According to both the manual and the safety protocols, what checklist steps must be verified before initial startup?",
+              "category": "cross-document",
+              "expectedBehavior": "Must synthesize items from both manual and safety documents (e.g. couplings, ventilation, eye protection, electrical grounding).",
+              "actualAnswer": "I couldn't find enough information to answer this question because no processed documents are currently in this knowledge base.",
+              "citations": [],
+              "isFoundInDocuments": false,
+              "passed": false,
+              "reason": "No documents in knowledge base to support answer.",
+              "latencyMs": 0
+            },
+            {
+              "testCaseId": "tc_4",
+              "question": "What is the current population of Nepal?",
+              "category": "negative-refusal",
+              "expectedBehavior": "Must strictly refuse because general world knowledge is outside the uploaded documents.",
+              "actualAnswer": "I couldn't find enough information to answer this question because no processed documents are currently in this knowledge base.",
+              "citations": [],
+              "isFoundInDocuments": false,
+              "passed": true,
+              "reason": "Correctly refused out-of-domain knowledge query.",
+              "latencyMs": 0
+            },
+            {
+              "testCaseId": "tc_5",
+              "question": "What was the third-quarter corporate EBITDA for 2024?",
+              "category": "negative-refusal",
+              "expectedBehavior": "Must explicitly state that financial metrics are not present in the uploaded documents.",
+              "actualAnswer": "I couldn't find enough information to answer this question because no processed documents are currently in this knowledge base.",
+              "citations": [],
+              "isFoundInDocuments": false,
+              "passed": true,
+              "reason": "Correctly refused out-of-domain knowledge query.",
+              "latencyMs": 0
+            }
+          ]
+        }
+      ],
+      "accountId": "acc_default"
+    },
+    {
+      "id": "kb_1yimv259",
+      "name": "Test KB Alpha",
+      "description": "Custom domain knowledge repository for Test KB Alpha.",
+      "createdDate": 1788455878471,
+      "updatedAt": 1788455878472,
+      "currentVersion": "v1.0",
+      "versions": [
+        {
+          "id": "ver_anlmcv",
+          "versionNumber": 1,
+          "versionTag": "v1.0",
+          "label": "Initial Knowledge Base snapshot",
+          "timestamp": 1788455878471,
+          "documentCount": 0,
+          "totalPages": 0,
+          "documents": [],
+          "isCurrent": true
+        }
+      ],
+      "documents": [
+        {
+          "id": "doc_l9pjxxtg",
+          "filename": "Apex-1000 Compressor Operations Manual.pdf",
+          "fileType": "application/pdf",
+          "fileSize": 3806,
+          "uploadTimestamp": 1788455878455,
+          "processingStatus": "processed",
+          "pageCount": 3,
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "Apex-1000 Industrial Air Compressor\nTechnical Operations Manual — Rev 4.2\nSection 1.1: System Purpose & Architecture\nThe Apex-1000 is a heavy-duty rotary screw air compressor engineered for continuous\nindustrial manufacturing operations. The main purpose of this system is to supply clean,\ndry, pulse-free compressed air to automated pneumatic assembly lines and high-precision tooling.\nSystem components include a dual-stage air end, variable-speed electric drive motor,\nintegral refrigerated moisture separator, and an advanced micro-controller telemetry unit.\nOperating within standard environmental parameters ensures an operational lifespan exceeding\n60,000 continuous operating hours."
+            },
+            {
+              "pageNumber": 2,
+              "text": "Apex-1000 Technical Specifications & Operating Limits\nSection 2.3: Pressure & Thermal Specifications\nOperating Pressure: The machine operates at 50 PSI under nominal production load.\nStandard factory pressure regulation range: 45 PSI minimum to 55 PSI maximum threshold.\nMaximum Permissible Discharge Temperature: 185°F (85°C).\nLubricant Reservoir Capacity: 4.5 Liters of synthetic ISO VG 46 compressor fluid.\nElectrical Input Requirement: 480V 3-Phase, 60Hz, 45 Amperes dedicated service.\nNotice: Operating the compressor continuously above 58 PSI will engage the automatic\npressure relief valve and register an alert code (ERR-P20) on the digital readout panel."
+            },
+            {
+              "pageNumber": 3,
+              "text": "Apex-1000 Maintenance & Safety Procedures\nSection 3.1: Maintenance Responsibilities\nThe Facility Chief Engineer is responsible for maintaining it and supervising all scheduled\npreventative servicing intervals every 500 operating hours.\nOnly certified technicians authorized by the Facility Engineering Group are permitted to replace\ninternal air filters, inspect coupling sleeves, or adjust pressure control diaphragms.\nSection 3.4: Emergency Shutdown Sequence\nIn the event of anomalous vibration, hydraulic leak, or smoke:\n1. Immediately press the prominent red E-STOP button located on the front control panel.\n2. Wait 30 seconds for internal pressure blowdown to complete before touching valves.\n3. Isolate the main 480V circuit breaker lock-out switch.\n4. Notify the shift supervisor and document the stoppage in the maintenance log."
+            }
+          ],
+          "summary": "Apex-1000 Compressor Operations Manual.pdf (3 pages) - Initial section: \"Apex-1000 Industrial Air Compressor Technical Operations Manual — Rev 4.2 Section 1.1: System Purpose & Architecture The Apex-1000 is a heavy-duty rotary screw air compressor engineered for continuous industrial manufacturing operations. The main purpose of this system is to supply clean, dry, pulse...\""
+        }
+      ],
+      "processingStatus": "ready",
+      "chatHistory": [],
+      "specializedAi": {
+        "id": "ai_3yxwt9av",
+        "kbId": "kb_1yimv259",
+        "name": "Test KB Alpha Specialist",
+        "description": "Specialized AI grounded exclusively in the knowledge base \"Test KB Alpha\".",
+        "roleDefinition": "You are an expert domain specialist and advisor for Test KB Alpha. Provide rigorous, document-grounded answers based exclusively on the provided reference materials.",
+        "systemPromptModifier": "Maintain strict accuracy and professional tone. Always prioritize safety standards, technical specifications, and explicit facts from the documents.",
+        "responseStyle": "detailed",
+        "citationMode": "standard",
+        "strictRefusal": true,
+        "confidenceThreshold": 85,
+        "createdAt": 1788455878471,
+        "updatedAt": 1788455878471
+      },
+      "testCases": [
+        {
+          "id": "tc_1",
+          "kbId": "kb_1yimv259",
+          "category": "grounded",
+          "question": "What pressure does the machine operate at under nominal conditions?",
+          "expectedBehavior": "Must cite exact grounded operating pressure (50 PSI) from equipment manual.",
+          "expectedKeywords": [
+            "50 PSI",
+            "PSI"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_2",
+          "kbId": "kb_1yimv259",
+          "category": "grounded",
+          "question": "Who is authorized and responsible for maintaining the system?",
+          "expectedBehavior": "Must identify the Facility Chief Engineer and authorized technicians.",
+          "expectedKeywords": [
+            "Chief Engineer",
+            "engineer"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_3",
+          "kbId": "kb_1yimv259",
+          "category": "cross-document",
+          "question": "According to both the manual and the safety protocols, what checklist steps must be verified before initial startup?",
+          "expectedBehavior": "Must synthesize items from both manual and safety documents (e.g. couplings, ventilation, eye protection, electrical grounding).",
+          "expectedKeywords": [
+            "ventilation",
+            "couplings",
+            "inspection",
+            "safety"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_4",
+          "kbId": "kb_1yimv259",
+          "category": "negative-refusal",
+          "question": "What is the current population of Nepal?",
+          "expectedBehavior": "Must strictly refuse because general world knowledge is outside the uploaded documents.",
+          "mustRefuse": true
+        },
+        {
+          "id": "tc_5",
+          "kbId": "kb_1yimv259",
+          "category": "negative-refusal",
+          "question": "What was the third-quarter corporate EBITDA for 2024?",
+          "expectedBehavior": "Must explicitly state that financial metrics are not present in the uploaded documents.",
+          "mustRefuse": true
+        }
+      ],
+      "evaluationRuns": [],
+      "accountId": "acc_default"
+    },
+    {
+      "id": "kb_xvkcsxyz",
+      "name": "Test KB Beta",
+      "description": "Custom domain knowledge repository for Test KB Beta.",
+      "createdDate": 1788455878472,
+      "updatedAt": 1788455878472,
+      "currentVersion": "v1.0",
+      "versions": [
+        {
+          "id": "ver_pa5ev7",
+          "versionNumber": 1,
+          "versionTag": "v1.0",
+          "label": "Initial Knowledge Base snapshot",
+          "timestamp": 1788455878472,
+          "documentCount": 0,
+          "totalPages": 0,
+          "documents": [],
+          "isCurrent": true
+        }
+      ],
+      "documents": [],
+      "processingStatus": "empty",
+      "chatHistory": [],
+      "specializedAi": {
+        "id": "ai_vzz1eb9g",
+        "kbId": "kb_xvkcsxyz",
+        "name": "Test KB Beta Specialist",
+        "description": "Specialized AI grounded exclusively in the knowledge base \"Test KB Beta\".",
+        "roleDefinition": "You are an expert domain specialist and advisor for Test KB Beta. Provide rigorous, document-grounded answers based exclusively on the provided reference materials.",
+        "systemPromptModifier": "Maintain strict accuracy and professional tone. Always prioritize safety standards, technical specifications, and explicit facts from the documents.",
+        "responseStyle": "detailed",
+        "citationMode": "standard",
+        "strictRefusal": true,
+        "confidenceThreshold": 85,
+        "createdAt": 1788455878472,
+        "updatedAt": 1788455878472
+      },
+      "testCases": [
+        {
+          "id": "tc_1",
+          "kbId": "kb_xvkcsxyz",
+          "category": "grounded",
+          "question": "What pressure does the machine operate at under nominal conditions?",
+          "expectedBehavior": "Must cite exact grounded operating pressure (50 PSI) from equipment manual.",
+          "expectedKeywords": [
+            "50 PSI",
+            "PSI"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_2",
+          "kbId": "kb_xvkcsxyz",
+          "category": "grounded",
+          "question": "Who is authorized and responsible for maintaining the system?",
+          "expectedBehavior": "Must identify the Facility Chief Engineer and authorized technicians.",
+          "expectedKeywords": [
+            "Chief Engineer",
+            "engineer"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_3",
+          "kbId": "kb_xvkcsxyz",
+          "category": "cross-document",
+          "question": "According to both the manual and the safety protocols, what checklist steps must be verified before initial startup?",
+          "expectedBehavior": "Must synthesize items from both manual and safety documents (e.g. couplings, ventilation, eye protection, electrical grounding).",
+          "expectedKeywords": [
+            "ventilation",
+            "couplings",
+            "inspection",
+            "safety"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_4",
+          "kbId": "kb_xvkcsxyz",
+          "category": "negative-refusal",
+          "question": "What is the current population of Nepal?",
+          "expectedBehavior": "Must strictly refuse because general world knowledge is outside the uploaded documents.",
+          "mustRefuse": true
+        },
+        {
+          "id": "tc_5",
+          "kbId": "kb_xvkcsxyz",
+          "category": "negative-refusal",
+          "question": "What was the third-quarter corporate EBITDA for 2024?",
+          "expectedBehavior": "Must explicitly state that financial metrics are not present in the uploaded documents.",
+          "mustRefuse": true
+        }
+      ],
+      "evaluationRuns": [],
+      "accountId": "acc_default"
+    },
+    {
+      "id": "kb_o6dlxweh",
+      "name": "Test KB Alpha",
+      "description": "Custom domain knowledge repository for Test KB Alpha.",
+      "createdDate": 1788455881340,
+      "updatedAt": 1788455881341,
+      "currentVersion": "v1.0",
+      "versions": [
+        {
+          "id": "ver_8tvgsa",
+          "versionNumber": 1,
+          "versionTag": "v1.0",
+          "label": "Initial Knowledge Base snapshot",
+          "timestamp": 1788455881340,
+          "documentCount": 0,
+          "totalPages": 0,
+          "documents": [],
+          "isCurrent": true
+        }
+      ],
+      "documents": [
+        {
+          "id": "doc_vic3mnaz",
+          "filename": "Apex-1000 Compressor Operations Manual.pdf",
+          "fileType": "application/pdf",
+          "fileSize": 3805,
+          "uploadTimestamp": 1788455881327,
+          "processingStatus": "processed",
+          "pageCount": 3,
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "Apex-1000 Industrial Air Compressor\nTechnical Operations Manual — Rev 4.2\nSection 1.1: System Purpose & Architecture\nThe Apex-1000 is a heavy-duty rotary screw air compressor engineered for continuous\nindustrial manufacturing operations. The main purpose of this system is to supply clean,\ndry, pulse-free compressed air to automated pneumatic assembly lines and high-precision tooling.\nSystem components include a dual-stage air end, variable-speed electric drive motor,\nintegral refrigerated moisture separator, and an advanced micro-controller telemetry unit.\nOperating within standard environmental parameters ensures an operational lifespan exceeding\n60,000 continuous operating hours."
+            },
+            {
+              "pageNumber": 2,
+              "text": "Apex-1000 Technical Specifications & Operating Limits\nSection 2.3: Pressure & Thermal Specifications\nOperating Pressure: The machine operates at 50 PSI under nominal production load.\nStandard factory pressure regulation range: 45 PSI minimum to 55 PSI maximum threshold.\nMaximum Permissible Discharge Temperature: 185°F (85°C).\nLubricant Reservoir Capacity: 4.5 Liters of synthetic ISO VG 46 compressor fluid.\nElectrical Input Requirement: 480V 3-Phase, 60Hz, 45 Amperes dedicated service.\nNotice: Operating the compressor continuously above 58 PSI will engage the automatic\npressure relief valve and register an alert code (ERR-P20) on the digital readout panel."
+            },
+            {
+              "pageNumber": 3,
+              "text": "Apex-1000 Maintenance & Safety Procedures\nSection 3.1: Maintenance Responsibilities\nThe Facility Chief Engineer is responsible for maintaining it and supervising all scheduled\npreventative servicing intervals every 500 operating hours.\nOnly certified technicians authorized by the Facility Engineering Group are permitted to replace\ninternal air filters, inspect coupling sleeves, or adjust pressure control diaphragms.\nSection 3.4: Emergency Shutdown Sequence\nIn the event of anomalous vibration, hydraulic leak, or smoke:\n1. Immediately press the prominent red E-STOP button located on the front control panel.\n2. Wait 30 seconds for internal pressure blowdown to complete before touching valves.\n3. Isolate the main 480V circuit breaker lock-out switch.\n4. Notify the shift supervisor and document the stoppage in the maintenance log."
+            }
+          ],
+          "summary": "Apex-1000 Compressor Operations Manual.pdf (3 pages) - Initial section: \"Apex-1000 Industrial Air Compressor Technical Operations Manual — Rev 4.2 Section 1.1: System Purpose & Architecture The Apex-1000 is a heavy-duty rotary screw air compressor engineered for continuous industrial manufacturing operations. The main purpose of this system is to supply clean, dry, pulse...\""
+        }
+      ],
+      "processingStatus": "ready",
+      "chatHistory": [],
+      "specializedAi": {
+        "id": "ai_afz1jn0m",
+        "kbId": "kb_o6dlxweh",
+        "name": "Test KB Alpha Specialist",
+        "description": "Specialized AI grounded exclusively in the knowledge base \"Test KB Alpha\".",
+        "roleDefinition": "You are an expert domain specialist and advisor for Test KB Alpha. Provide rigorous, document-grounded answers based exclusively on the provided reference materials.",
+        "systemPromptModifier": "Maintain strict accuracy and professional tone. Always prioritize safety standards, technical specifications, and explicit facts from the documents.",
+        "responseStyle": "detailed",
+        "citationMode": "standard",
+        "strictRefusal": true,
+        "confidenceThreshold": 85,
+        "createdAt": 1788455881340,
+        "updatedAt": 1788455881340
+      },
+      "testCases": [
+        {
+          "id": "tc_1",
+          "kbId": "kb_o6dlxweh",
+          "category": "grounded",
+          "question": "What pressure does the machine operate at under nominal conditions?",
+          "expectedBehavior": "Must cite exact grounded operating pressure (50 PSI) from equipment manual.",
+          "expectedKeywords": [
+            "50 PSI",
+            "PSI"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_2",
+          "kbId": "kb_o6dlxweh",
+          "category": "grounded",
+          "question": "Who is authorized and responsible for maintaining the system?",
+          "expectedBehavior": "Must identify the Facility Chief Engineer and authorized technicians.",
+          "expectedKeywords": [
+            "Chief Engineer",
+            "engineer"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_3",
+          "kbId": "kb_o6dlxweh",
+          "category": "cross-document",
+          "question": "According to both the manual and the safety protocols, what checklist steps must be verified before initial startup?",
+          "expectedBehavior": "Must synthesize items from both manual and safety documents (e.g. couplings, ventilation, eye protection, electrical grounding).",
+          "expectedKeywords": [
+            "ventilation",
+            "couplings",
+            "inspection",
+            "safety"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_4",
+          "kbId": "kb_o6dlxweh",
+          "category": "negative-refusal",
+          "question": "What is the current population of Nepal?",
+          "expectedBehavior": "Must strictly refuse because general world knowledge is outside the uploaded documents.",
+          "mustRefuse": true
+        },
+        {
+          "id": "tc_5",
+          "kbId": "kb_o6dlxweh",
+          "category": "negative-refusal",
+          "question": "What was the third-quarter corporate EBITDA for 2024?",
+          "expectedBehavior": "Must explicitly state that financial metrics are not present in the uploaded documents.",
+          "mustRefuse": true
+        }
+      ],
+      "evaluationRuns": [],
+      "accountId": "acc_default"
+    },
+    {
+      "id": "kb_p5a7flxf",
+      "name": "Test KB Beta",
+      "description": "Custom domain knowledge repository for Test KB Beta.",
+      "createdDate": 1788455881340,
+      "updatedAt": 1788456645134,
+      "currentVersion": "v1.0",
+      "versions": [
+        {
+          "id": "ver_8nvn1a",
+          "versionNumber": 1,
+          "versionTag": "v1.0",
+          "label": "Initial Knowledge Base snapshot",
+          "timestamp": 1788455881340,
+          "documentCount": 0,
+          "totalPages": 0,
+          "documents": [],
+          "isCurrent": true
+        }
+      ],
+      "documents": [
+        {
+          "id": "doc_a2kjbse2",
+          "filename": "Apex-1000 Compressor Operations Manual.pdf",
+          "fileType": "application/pdf",
+          "fileSize": 3806,
+          "uploadTimestamp": 1788456645123,
+          "processingStatus": "processed",
+          "pageCount": 3,
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "Apex-1000 Industrial Air Compressor\nTechnical Operations Manual — Rev 4.2\nSection 1.1: System Purpose & Architecture\nThe Apex-1000 is a heavy-duty rotary screw air compressor engineered for continuous\nindustrial manufacturing operations. The main purpose of this system is to supply clean,\ndry, pulse-free compressed air to automated pneumatic assembly lines and high-precision tooling.\nSystem components include a dual-stage air end, variable-speed electric drive motor,\nintegral refrigerated moisture separator, and an advanced micro-controller telemetry unit.\nOperating within standard environmental parameters ensures an operational lifespan exceeding\n60,000 continuous operating hours."
+            },
+            {
+              "pageNumber": 2,
+              "text": "Apex-1000 Technical Specifications & Operating Limits\nSection 2.3: Pressure & Thermal Specifications\nOperating Pressure: The machine operates at 50 PSI under nominal production load.\nStandard factory pressure regulation range: 45 PSI minimum to 55 PSI maximum threshold.\nMaximum Permissible Discharge Temperature: 185°F (85°C).\nLubricant Reservoir Capacity: 4.5 Liters of synthetic ISO VG 46 compressor fluid.\nElectrical Input Requirement: 480V 3-Phase, 60Hz, 45 Amperes dedicated service.\nNotice: Operating the compressor continuously above 58 PSI will engage the automatic\npressure relief valve and register an alert code (ERR-P20) on the digital readout panel."
+            },
+            {
+              "pageNumber": 3,
+              "text": "Apex-1000 Maintenance & Safety Procedures\nSection 3.1: Maintenance Responsibilities\nThe Facility Chief Engineer is responsible for maintaining it and supervising all scheduled\npreventative servicing intervals every 500 operating hours.\nOnly certified technicians authorized by the Facility Engineering Group are permitted to replace\ninternal air filters, inspect coupling sleeves, or adjust pressure control diaphragms.\nSection 3.4: Emergency Shutdown Sequence\nIn the event of anomalous vibration, hydraulic leak, or smoke:\n1. Immediately press the prominent red E-STOP button located on the front control panel.\n2. Wait 30 seconds for internal pressure blowdown to complete before touching valves.\n3. Isolate the main 480V circuit breaker lock-out switch.\n4. Notify the shift supervisor and document the stoppage in the maintenance log."
+            }
+          ],
+          "summary": "Apex-1000 Compressor Operations Manual.pdf (3 pages) - Initial section: \"Apex-1000 Industrial Air Compressor Technical Operations Manual — Rev 4.2 Section 1.1: System Purpose & Architecture The Apex-1000 is a heavy-duty rotary screw air compressor engineered for continuous industrial manufacturing operations. The main purpose of this system is to supply clean, dry, pulse...\""
+        },
+        {
+          "id": "doc_tols3u8p",
+          "filename": "Facility Safety & Compliance Protocol.pdf",
+          "fileType": "application/pdf",
+          "fileSize": 2682,
+          "uploadTimestamp": 1788456645134,
+          "processingStatus": "processed",
+          "pageCount": 2,
+          "pages": [
+            {
+              "pageNumber": 1,
+              "text": "Facility Safety & Compliance Protocol\nMandatory Plant Safety Directive — Standard 109-B\nSection 4.1: Pre-Installation & Pre-Startup Checklist\nBefore installation and before every cold startup of heavy pressurized machinery (including the Apex-1000):\n1. Inspect all flexible pneumatic line couplings and high-pressure hose seals for micro-cracks.\n2. Verify that dual emergency mechanical ventilation dampers are unlocked and fully unobstructed.\n3. Ensure certified eye protection (ANSI Z87.1) and steel-toed footwear are worn by all personnel.\n4. Verify that the copper electrical ground straps are securely bolted to the primary earth bus.\n5. Confirm that zero unauthorized personnel are within the 3-meter safety radius.\nUnder no circumstances may startup be initiated without signed authorization from both the\nshift lead and the environmental health safety inspector."
+            },
+            {
+              "pageNumber": 2,
+              "text": "Safety Evacuation Triggers & Reporting Standards\nSection 5.2: Overpressure Emergency Evacuation\nEvacuation Threshold: If an operational pressure reading exceeds 65 PSI in any manufacturing zone,\ntechnicians must trigger the plant alarm and execute an immediate mandatory evacuation of Zone 4.\nSection 5.5: Incident Documentation & Escalation\nAny pressure anomaly or emergency stop activation must be formally entered into the digital\nSafety Registry within 2 hours of the occurrence.\nFailure to log anomalous events within 2 hours is considered a Level 2 safety breach subject to audit."
+            }
+          ],
+          "summary": "Facility Safety & Compliance Protocol.pdf (2 pages) - Initial section: \"Facility Safety & Compliance Protocol Mandatory Plant Safety Directive — Standard 109-B Section 4.1: Pre-Installation & Pre-Startup Checklist Before installation and before every cold startup of heavy pressurized machinery (including the Apex-1000): 1. Inspect all flexible pneumatic line couplings a...\""
+        }
+      ],
+      "processingStatus": "ready",
+      "chatHistory": [],
+      "specializedAi": {
+        "id": "ai_ee63ekp8",
+        "kbId": "kb_p5a7flxf",
+        "name": "Test KB Beta Specialist",
+        "description": "Specialized AI grounded exclusively in the knowledge base \"Test KB Beta\".",
+        "roleDefinition": "You are an expert domain specialist and advisor for Test KB Beta. Provide rigorous, document-grounded answers based exclusively on the provided reference materials.",
+        "systemPromptModifier": "Maintain strict accuracy and professional tone. Always prioritize safety standards, technical specifications, and explicit facts from the documents.",
+        "responseStyle": "detailed",
+        "citationMode": "standard",
+        "strictRefusal": true,
+        "confidenceThreshold": 85,
+        "createdAt": 1788455881340,
+        "updatedAt": 1788455881340
+      },
+      "testCases": [
+        {
+          "id": "tc_1",
+          "kbId": "kb_p5a7flxf",
+          "category": "grounded",
+          "question": "What pressure does the machine operate at under nominal conditions?",
+          "expectedBehavior": "Must cite exact grounded operating pressure (50 PSI) from equipment manual.",
+          "expectedKeywords": [
+            "50 PSI",
+            "PSI"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_2",
+          "kbId": "kb_p5a7flxf",
+          "category": "grounded",
+          "question": "Who is authorized and responsible for maintaining the system?",
+          "expectedBehavior": "Must identify the Facility Chief Engineer and authorized technicians.",
+          "expectedKeywords": [
+            "Chief Engineer",
+            "engineer"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_3",
+          "kbId": "kb_p5a7flxf",
+          "category": "cross-document",
+          "question": "According to both the manual and the safety protocols, what checklist steps must be verified before initial startup?",
+          "expectedBehavior": "Must synthesize items from both manual and safety documents (e.g. couplings, ventilation, eye protection, electrical grounding).",
+          "expectedKeywords": [
+            "ventilation",
+            "couplings",
+            "inspection",
+            "safety"
+          ],
+          "mustRefuse": false
+        },
+        {
+          "id": "tc_4",
+          "kbId": "kb_p5a7flxf",
+          "category": "negative-refusal",
+          "question": "What is the current population of Nepal?",
+          "expectedBehavior": "Must strictly refuse because general world knowledge is outside the uploaded documents.",
+          "mustRefuse": true
+        },
+        {
+          "id": "tc_5",
+          "kbId": "kb_p5a7flxf",
+          "category": "negative-refusal",
+          "question": "What was the third-quarter corporate EBITDA for 2024?",
+          "expectedBehavior": "Must explicitly state that financial metrics are not present in the uploaded documents.",
+          "mustRefuse": true
+        }
+      ],
+      "evaluationRuns": [],
+      "accountId": "acc_default"
+    }
+  ]
+}
