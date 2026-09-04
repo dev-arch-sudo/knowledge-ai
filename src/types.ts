@@ -36,6 +36,8 @@ export interface ChatMessage {
   isFoundInDocuments?: boolean;
   memoryUsed?: boolean;
   memoryCount?: number;
+  usedMemories?: Array<{ id: string; type: string; summary: string }>;
+  experienceRecorded?: boolean;
   userFeedback?: 'helpful' | 'unhelpful' | 'correct' | 'incorrect' | 'procedure_worked' | 'procedure_failed';
   experienceId?: string;
 }
@@ -258,6 +260,7 @@ export interface Memory {
   type: MemoryType;
   content: string;
   summary: string;
+  tags?: string[];
   evidence: string[];
   confidence: number;
   sourceExperienceIds: string[];
@@ -304,6 +307,7 @@ export interface Experience {
   sandboxScenarioId?: string;
   sandboxRunId?: string;
   createdAt: number;
+  timestamp?: number;
 }
 
 export type ScenarioDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
@@ -478,5 +482,207 @@ export interface Phase4DashboardStats {
   approvedImprovementsCount: number;
   recentAuditEvents: AuditEvent[];
 }
+
+export type MemoryAuditLog = AuditEvent;
+export type Phase4DashboardMetrics = any;
+
+// ==========================================
+// PHASE 5: MEDIATOR & RELIABILITY TYPES
+// ==========================================
+
+export type ExecutionMode = 'SEQUENTIAL' | 'PARALLEL' | 'HYBRID';
+export type TaskStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'PARTIALLY_COMPLETED';
+export type SubtaskStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'TIMED_OUT' | 'SKIPPED';
+export type ClaimAgreement = 'AGREE' | 'DISAGREE' | 'CONDITIONAL' | 'INSUFFICIENT_INFORMATION';
+export type VerificationClassification = 'SUPPORTED' | 'CONTRADICTED' | 'UNCERTAIN';
+
+export interface AgentDefinition {
+  id: string;
+  name: string;
+  role: string;
+  provider: 'mock' | 'gemini' | 'external';
+  modelIdentifier?: string;
+  capabilities: string[];
+  isExternal: boolean;
+  untrusted: boolean;
+}
+
+export interface OrchestrationEvent {
+  eventId: string;
+  runId: string;
+  taskId: string;
+  subtaskId?: string;
+  timestamp: number;
+  eventType: string;
+  agentId?: string;
+  provider?: string;
+  payloadHash: string;
+  previousEventId?: string | null;
+  details?: Record<string, any>;
+}
+
+export interface AgentClaim {
+  id: string;
+  subtaskId: string;
+  agentId: string;
+  claimText: string;
+  confidence: number;
+  supportingCitations: string[];
+  systemAsserted: boolean;
+  agentClaimedProvenance?: {
+    claimedSource: string;
+    claimedVerified: boolean;
+  };
+}
+
+export interface ProvenanceTrace {
+  runId: string;
+  taskId: string;
+  subtaskId?: string;
+  agentId: string;
+  provider: string;
+  timestamp: number;
+  claimedByAgent: boolean;
+  systemAsserted: boolean;
+  sourceDocCitations: string[];
+  transformationNotes?: string;
+  evidenceIndependenceScore: number;
+}
+
+export interface SubtaskAttempt {
+  attemptNumber: number;
+  agentId: string;
+  provider: string;
+  startedAt: number;
+  completedAt?: number;
+  status: SubtaskStatus;
+  error?: string;
+  output?: any;
+}
+
+export interface Subtask {
+  id: string;
+  taskId: string;
+  title: string;
+  description: string;
+  assignedAgentId: string;
+  dependencies: string[];
+  status: SubtaskStatus;
+  concurrencyGroup?: string;
+  startedAt?: number;
+  completedAt?: number;
+  latencyMs?: number;
+  attempts: SubtaskAttempt[];
+  maxRetries: number;
+  retryCount: number;
+  timeoutMs: number;
+  output?: any;
+  error?: string;
+  claims?: AgentClaim[];
+  provenance?: ProvenanceTrace;
+}
+
+export interface DisagreementRecord {
+  id: string;
+  topic: string;
+  competingClaims: AgentClaim[];
+  evidenceFoundInGrounding: boolean;
+  consensusRatio: number;
+  consensusVote: string;
+  resolutionStatus: string;
+  finalGroundedClaim?: string;
+}
+
+export interface ContradictionRecord {
+  id: string;
+  claimA: AgentClaim;
+  claimB: AgentClaim;
+  detectedAt: number;
+  provenanceA: ProvenanceTrace;
+  provenanceB: ProvenanceTrace;
+  verificationStatus: VerificationClassification;
+  resolutionRationale: string;
+}
+
+export interface OrchestrationRun {
+  runId: string;
+  parentTaskId: string;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  executionMode: ExecutionMode;
+  config: {
+    executionMode: ExecutionMode;
+    partialFailurePolicy: string;
+    maxConcurrentSubtasks: number;
+    maxDelegationDepth: number;
+    maxSubtasks: number;
+    maxRetries: number;
+    globalTimeoutMs: number;
+    subtaskTimeoutMs: number;
+    seed?: number;
+    enableEscalation?: boolean;
+    dedicatedVerificationAgent?: boolean;
+  };
+  participatingAgents: string[];
+  subtasks: Subtask[];
+  events: OrchestrationEvent[];
+  disagreements: DisagreementRecord[];
+  contradictions: ContradictionRecord[];
+  synthesisResult?: {
+    summary: string;
+    originalClaimsCount: number;
+    synthesizedClaimsCount: number;
+    meaningPreserved: boolean;
+    unsupportedClaimsDetected: string[];
+  };
+  verificationResults?: {
+    classification: VerificationClassification;
+    consensusSignal: 'STRONG_CONSENSUS' | 'WEAK_CONSENSUS' | 'SPLIT_CONSENSUS' | 'NO_CONSENSUS';
+    evidenceSignal: 'STRONG_GROUNDED' | 'PARTIAL_GROUNDED' | 'UNGROUNDED';
+    trustedKnowledgeReference?: string;
+    rationale: string;
+  };
+  securityAudit: {
+    promptInjectionAttempts: number;
+    fakeProvenanceBlocked: number;
+    fabricatedCitationsRejected: number;
+    memoryPoisoningAttemptsBlocked: number;
+    knowledgeVersionTamperingBlocked: number;
+  };
+  status: TaskStatus;
+  finalOutput?: any;
+  error?: string;
+  actualDurationMs?: number;
+  parallelSpeedupRatio?: number;
+}
+
+export interface BenchmarkMetrics {
+  totalRuns: number;
+  successCount: number;
+  failureCount: number;
+  partialFailureCount: number;
+  timeoutCount: number;
+  retryCount: number;
+  reassignmentCount: number;
+  averageLatencyMs: number;
+  p95LatencyMs: number;
+  p99LatencyMs: number;
+  meanParallelSpeedup: number;
+  disagreementsDetected: number;
+  verificationEscalations: number;
+  classifications: {
+    supported: number;
+    contradicted: number;
+    uncertain: number;
+  };
+  securityEventsBlocked: {
+    promptInjection: number;
+    fakeProvenance: number;
+    fabricatedCitation: number;
+    memoryBoundaryAttempts: number;
+  };
+}
+
 
 

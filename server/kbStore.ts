@@ -422,6 +422,15 @@ class KnowledgeBaseStore {
     // Remove any existing doc with identical filename or id
     kb.documents = kb.documents.filter((d) => d.id !== doc.id && d.filename !== doc.filename);
     kb.documents.push(doc);
+
+    // Keep initial active version documents snapshot updated if empty
+    const currentVer = kb.versions?.find((v) => v.versionTag === kb.currentVersion);
+    if (currentVer && (!currentVer.documents || currentVer.documents.length === 0)) {
+      currentVer.documents = JSON.parse(JSON.stringify(kb.documents));
+      currentVer.documentCount = kb.documents.length;
+      currentVer.totalPages = kb.documents.reduce((acc, d) => acc + (d.pageCount || 0), 0);
+    }
+
     kb.updatedAt = Date.now();
     this.updateKBStatus(kb);
     this.saveToDisk();

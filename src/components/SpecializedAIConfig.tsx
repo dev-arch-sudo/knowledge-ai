@@ -13,6 +13,7 @@ import {
   GraduationCap,
   Scale,
   RefreshCw,
+  Brain,
 } from 'lucide-react';
 import { SpecializedAI, ResponseStyle, CitationMode } from '../types';
 
@@ -49,6 +50,15 @@ export const SpecializedAIConfig: React.FC<SpecializedAIConfigProps> = ({
   const [confidenceThreshold, setConfidenceThreshold] = useState(
     specializedAi.confidenceThreshold || 85
   );
+  const [memoryEnabled, setMemoryEnabled] = useState(
+    specializedAi.memoryEnabled !== undefined ? specializedAi.memoryEnabled : true
+  );
+  const [maxRetrievedMemories, setMaxRetrievedMemories] = useState(
+    specializedAi.maxRetrievedMemories || 5
+  );
+  const [memoryConfidenceThreshold, setMemoryConfidenceThreshold] = useState(
+    specializedAi.memoryConfidenceThreshold ? Math.round(specializedAi.memoryConfidenceThreshold * 100) : 70
+  );
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -60,6 +70,11 @@ export const SpecializedAIConfig: React.FC<SpecializedAIConfigProps> = ({
     setCitationMode(specializedAi.citationMode || 'standard');
     setStrictRefusal(specializedAi.strictRefusal !== undefined ? specializedAi.strictRefusal : true);
     setConfidenceThreshold(specializedAi.confidenceThreshold || 85);
+    setMemoryEnabled(specializedAi.memoryEnabled !== undefined ? specializedAi.memoryEnabled : true);
+    setMaxRetrievedMemories(specializedAi.maxRetrievedMemories || 5);
+    setMemoryConfidenceThreshold(
+      specializedAi.memoryConfidenceThreshold ? Math.round(specializedAi.memoryConfidenceThreshold * 100) : 70
+    );
   }, [specializedAi]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -74,6 +89,9 @@ export const SpecializedAIConfig: React.FC<SpecializedAIConfigProps> = ({
       citationMode,
       strictRefusal,
       confidenceThreshold,
+      memoryEnabled,
+      maxRetrievedMemories,
+      memoryConfidenceThreshold: memoryConfidenceThreshold / 100,
     });
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -394,6 +412,74 @@ export const SpecializedAIConfig: React.FC<SpecializedAIConfigProps> = ({
                 <span>50% (Permissive)</span>
                 <span>85% (Recommended)</span>
                 <span>99% (Ultra-strict)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Phase 4: Memory Retrieval & Governance */}
+          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4">
+            <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+              <Brain className="w-4 h-4 text-purple-600" />
+              Memory Retrieval Governance (Phase 4)
+            </h3>
+
+            <div className="flex items-start justify-between gap-4 p-4 rounded-xl bg-purple-50/50 border border-purple-200">
+              <div>
+                <label htmlFor="toggle-memory-enabled" className="text-xs font-semibold text-slate-900 block cursor-pointer">
+                  Enable Episodic & Procedural Memory Retrieval
+                </label>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  When enabled, verified memories are injected into the grounding prompt to provide past operational learnings. Candidate, rejected, and archived memories remain strictly excluded.
+                </p>
+              </div>
+              <input
+                id="toggle-memory-enabled"
+                type="checkbox"
+                checked={memoryEnabled}
+                onChange={(e) => setMemoryEnabled(e.target.checked)}
+                className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 mt-1 cursor-pointer"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              <div>
+                <div className="flex items-center justify-between text-xs font-medium text-slate-700 mb-1.5">
+                  <span>Max Retrieved Memories</span>
+                  <span className="font-semibold text-purple-600">{maxRetrievedMemories} items</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={maxRetrievedMemories}
+                  onChange={(e) => setMaxRetrievedMemories(Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                  <span>1</span>
+                  <span>5 (Default)</span>
+                  <span>10</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-xs font-medium text-slate-700 mb-1.5">
+                  <span>Memory Confidence Threshold</span>
+                  <span className="font-semibold text-purple-600">{memoryConfidenceThreshold}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="50"
+                  max="95"
+                  value={memoryConfidenceThreshold}
+                  onChange={(e) => setMemoryConfidenceThreshold(Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                  <span>50%</span>
+                  <span>70% (Default)</span>
+                  <span>95%</span>
+                </div>
               </div>
             </div>
           </div>

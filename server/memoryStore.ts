@@ -9,6 +9,8 @@ import {
   ExperienceSource,
   ExperienceStatus,
   SandboxScenario,
+  ScenarioDifficulty,
+  ScenarioStatus,
   SandboxRun,
   SandboxRunStatus,
   SandboxRunOutcome,
@@ -432,6 +434,7 @@ export class MemoryStore {
     type: MemoryType;
     content: string;
     summary: string;
+    tags?: string[];
     evidence?: string[];
     confidence?: number;
     sourceExperienceIds?: string[];
@@ -451,6 +454,7 @@ export class MemoryStore {
       type: data.type,
       content: data.content.trim(),
       summary: data.summary.trim(),
+      tags: data.tags || [],
       evidence: data.evidence || [],
       confidence: typeof data.confidence === 'number' ? Math.max(0, Math.min(1, data.confidence)) : 0.85,
       sourceExperienceIds: data.sourceExperienceIds || [],
@@ -652,11 +656,34 @@ export class MemoryStore {
     return sc;
   }
 
-  public createScenario(data: Omit<SandboxScenario, 'id' | 'createdAt' | 'updatedAt'>): SandboxScenario {
+  public createScenario(data: {
+    accountId: string;
+    aiId: string;
+    name: string;
+    description?: string;
+    userInput: string;
+    expectedBehavior: string;
+    expectedOutcome?: string;
+    evaluationCriteria?: string;
+    difficulty?: ScenarioDifficulty;
+    tags?: string[];
+    status?: ScenarioStatus;
+    requestId?: string;
+  }): SandboxScenario {
     const id = 'scen_' + crypto.randomBytes(8).toString('hex');
     const scenario: SandboxScenario = {
-      ...data,
       id,
+      accountId: data.accountId,
+      aiId: data.aiId,
+      name: data.name,
+      description: data.description || '',
+      userInput: data.userInput,
+      expectedBehavior: data.expectedBehavior,
+      expectedOutcome: data.expectedOutcome || '',
+      evaluationCriteria: data.evaluationCriteria || '',
+      difficulty: data.difficulty || 'MEDIUM',
+      tags: data.tags || [],
+      status: data.status || 'ACTIVE',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };

@@ -14,6 +14,9 @@ import {
   Info,
   ExternalLink,
   ShieldAlert,
+  Brain,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
 import { ChatMessage, Citation, KnowledgeDocument, SpecializedAI } from '../types';
 
@@ -45,6 +48,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [inputQuestion, setInputQuestion] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [feedbackSent, setFeedbackSent] = useState<Record<string, 'up' | 'down'>>({});
+
+  const handleFeedback = async (message: ChatMessage, type: 'up' | 'down') => {
+    setFeedbackSent((prev) => ({ ...prev, [message.id]: type }));
+    try {
+      await fetch('/api/phase4/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          experienceId: message.experienceId,
+          feedback: type === 'up' ? 'Operator confirmed response was accurate and useful.' : 'Operator noted procedural clarification was needed.',
+          rating: type === 'up' ? 5 : 2,
+        }),
+      });
+    } catch (e) {
+      console.error('Feedback error:', e);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -358,6 +379,62 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     </div>
                   </div>
                 )}
+
+              {/* Phase 4: Applied Memories Badge */}
+              {message.role === 'assistant' &&
+                message.usedMemories &&
+                message.usedMemories.length > 0 && (
+                  <div className="mt-3 pt-2.5 border-t border-purple-100 bg-purple-50/50 p-2 rounded-lg text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-purple-900 mb-1 text-[11px]">
+                      <Brain className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Retrieved Verified Memories ({message.usedMemories.length})</span>
+                    </div>
+                    <div className="space-y-1">
+                      {message.usedMemories.map((m) => (
+                        <div key={m.id} className="text-[11px] text-purple-800 bg-white/70 p-1.5 rounded border border-purple-200/50">
+                          <span className="font-bold uppercase text-[9px] px-1 py-0.2 rounded bg-purple-100 text-purple-700 mr-1.5">
+                            {m.type}
+                          </span>
+                          {m.summary}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Assistant Message Footer: Feedback Buttons */}
+              {message.role === 'assistant' && (
+                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="text-[10px]">Was this grounded response accurate?</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleFeedback(message, 'up')}
+                      className={`p-1 rounded hover:bg-slate-100 transition-colors cursor-pointer ${
+                        feedbackSent[message.id] === 'up' ? 'text-emerald-600 font-bold bg-emerald-50' : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                      title="Good response"
+                    >
+                      <ThumbsUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFeedback(message, 'down')}
+                      className={`p-1 rounded hover:bg-slate-100 transition-colors cursor-pointer ${
+                        feedbackSent[message.id] === 'down' ? 'text-amber-600 font-bold bg-amber-50' : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                      title="Needs improvement"
+                    >
+                      <ThumbsDown className="w-3.5 h-3.5" />
+                    </button>
+                    {feedbackSent[message.id] && (
+                      <span className="text-[10px] text-emerald-700 font-medium ml-1">
+                        Logged in Experience Ledger
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}

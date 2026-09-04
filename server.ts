@@ -17,6 +17,12 @@ import { memoryRetrievalService } from './server/memoryRetrievalService.js';
 import { sandboxService } from './server/sandboxService.js';
 import { learningService } from './server/learningService.js';
 import { runPhase4AcceptanceTests } from './server/phase4TestRunner.js';
+import { orchestrationEngine } from './server/mediator/orchestrationEngine.js';
+import { agentRegistry } from './server/mediator/agentRegistry.js';
+import { benchmarkRunner } from './server/mediator/benchmarkRunner.js';
+import { runMediatorPhase3Tests } from './server/mediator/mediatorPhase3Runner.js';
+import { runMediatorPhase4Tests } from './server/mediator/mediatorPhase4Runner.js';
+import { runMediatorPhase5Tests } from './server/mediator/mediatorPhase5Runner.js';
 import { ChatMessage, ApiChatRequest, ApiChatResponse, ApiErrorResponse, MemoryStatus, MemoryType, ExperienceSource } from './src/types.js';
 import crypto from 'crypto';
 
@@ -866,6 +872,49 @@ app.post('/api/v1/tests/phase4', async (req, res) => {
   }
 });
 
+// --- MEDIATOR TEST SUITES ---
+// Run Mediator Phase 3 Core Tests (12 tests)
+app.post('/api/v1/tests/mediator-phase3', async (req, res) => {
+  try {
+    const results = await runMediatorPhase3Tests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Mediator Phase 3 tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Mediator Phase 3 tests' });
+  }
+});
+
+// Run Mediator Phase 4 Advanced Protocol Tests (21 tests)
+app.post('/api/v1/tests/mediator-phase4', async (req, res) => {
+  try {
+    const results = await runMediatorPhase4Tests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Mediator Phase 4 tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Mediator Phase 4 tests' });
+  }
+});
+
+// Run Mediator Phase 5 Comprehensive Battery (51 tests)
+app.post('/api/v1/tests/mediator-phase5', async (req, res) => {
+  try {
+    const results = await runMediatorPhase5Tests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Mediator Phase 5 tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Mediator Phase 5 tests' });
+  }
+});
+
 // --- 2. AUTHENTICATED REST API ROUTES (/api/v1/ai/:ai_id/...) ---
 
 // GET /api/v1/ai/:ai_id/memories
@@ -1687,6 +1736,118 @@ app.patch('/api/phase4/ai-config', (req, res) => {
       specializedAi: updated,
       message: 'Specialized AI memory governance settings updated successfully.',
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =========================================================================
+// PHASE 5: MULTI-AGENT MEDIATOR & RELIABILITY ENDPOINTS
+// =========================================================================
+
+// List registered agents
+app.get('/api/v1/mediator/agents', (req, res) => {
+  try {
+    const agents = agentRegistry.listAgents();
+    res.json({ agents });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List all orchestration runs
+app.get('/api/v1/mediator/runs', (req, res) => {
+  try {
+    const runs = orchestrationEngine.listRuns();
+    res.json({ runs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get specific orchestration run with full event stream and telemetry
+app.get('/api/v1/mediator/runs/:runId', (req, res) => {
+  try {
+    const { runId } = req.params;
+    const run = orchestrationEngine.getRun(runId);
+    if (!run) return res.status(404).json({ error: 'Run not found' });
+    res.json({ run });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Execute task through multi-agent mediator
+app.post('/api/v1/mediator/execute', async (req, res) => {
+  try {
+    const { taskPrompt, subtaskPrompts, config } = req.body || {};
+    if (!taskPrompt) {
+      return res.status(400).json({ error: 'taskPrompt is required' });
+    }
+    const run = await orchestrationEngine.executeRun({
+      taskPrompt,
+      subtaskPrompts,
+      config,
+    });
+    res.json({ run });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Cancel active orchestration run
+app.post('/api/v1/mediator/runs/:runId/cancel', (req, res) => {
+  try {
+    const { runId } = req.params;
+    const success = orchestrationEngine.cancelRun(runId);
+    if (!success) {
+      return res.status(400).json({ error: 'Run cannot be cancelled or was not found' });
+    }
+    res.json({ message: 'Run cancelled successfully', runId });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get aggregated reliability and quality metrics
+app.get('/api/v1/mediator/metrics', (req, res) => {
+  try {
+    const metrics = benchmarkRunner.getMetrics();
+    res.json({ metrics });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Benchmark: Parallel speedup
+app.post('/api/v1/mediator/benchmarks/parallelism', async (req, res) => {
+  try {
+    const { subtaskCount, delayMs } = req.body || {};
+    const result = await benchmarkRunner.runParallelSpeedupBenchmark(
+      subtaskCount ? parseInt(subtaskCount, 10) : 4,
+      delayMs ? parseInt(delayMs, 10) : 50
+    );
+    res.json({ result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Benchmark: Agent count scaling
+app.post('/api/v1/mediator/benchmarks/scaling', async (req, res) => {
+  try {
+    const result = await benchmarkRunner.runAgentCountExperiment();
+    res.json({ result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Benchmark: Majority wrong scenario
+app.post('/api/v1/mediator/benchmarks/majority-wrong', async (req, res) => {
+  try {
+    const result = await benchmarkRunner.runMajorityWrongBenchmark();
+    res.json({ result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

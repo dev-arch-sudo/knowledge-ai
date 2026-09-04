@@ -18,8 +18,9 @@ export class LearningService {
     accountId: string;
     aiId: string;
     focusArea?: string;
+    requestId?: string;
   }): Promise<LearningCandidate> {
-    const { accountId, aiId, focusArea } = params;
+    const { accountId, aiId, focusArea, requestId } = params;
 
     const experiences = memoryStore.listExperiences({ accountId, aiId });
     const verifiedMemories = memoryStore.listMemories({ accountId, aiId, status: 'VERIFIED' });
@@ -64,8 +65,9 @@ export class LearningService {
     aiId: string;
     candidateIds: string[];
     title: string;
+    requestId?: string;
   }): Promise<ImprovementProposal> {
-    const { accountId, aiId, candidateIds, title } = params;
+    const { accountId, aiId, candidateIds, title, requestId } = params;
 
     const kbLookup = kbStore.getSpecializedAIById(aiId);
     if (!kbLookup) throw new Error('AI_NOT_FOUND');

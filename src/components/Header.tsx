@@ -10,10 +10,12 @@ import {
   BarChart2,
   Tag,
   Code2,
+  Brain,
+  Network,
 } from 'lucide-react';
 import { KnowledgeBase } from '../types';
 
-export type ActiveTab = 'playground' | 'knowledge' | 'config' | 'evaluations' | 'developer';
+export type ActiveTab = 'playground' | 'knowledge' | 'config' | 'evaluations' | 'developer' | 'sandbox' | 'mediator';
 
 interface HeaderProps {
   activeKb: KnowledgeBase | null;
@@ -56,11 +58,11 @@ export const Header: React.FC<HeaderProps> = ({
                 Knowledge AI
               </h1>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                Phase 3 API Platform
+                Phase 4 Learning Sandbox
               </span>
             </div>
             <p className="text-[11px] text-slate-500 font-normal">
-              Specialized AI service with secure REST API, key management, and evaluation.
+              Specialized AI service with memory, experiences, isolated sandbox, and regression scorecards.
             </p>
           </div>
         </div>
@@ -194,6 +196,38 @@ export const Header: React.FC<HeaderProps> = ({
           <span>API & Developer Platform</span>
           <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full font-mono">
             v1
+          </span>
+        </button>
+
+        <button
+          id="nav-tab-sandbox"
+          onClick={() => onTabChange('sandbox')}
+          className={`flex items-center gap-1.5 py-2.5 px-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+            currentTab === 'sandbox'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+          }`}
+        >
+          <Brain className="w-3.5 h-3.5 text-purple-600" />
+          <span>Memory & Learning Sandbox</span>
+          <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.2 rounded-full font-mono">
+            Phase 4
+          </span>
+        </button>
+
+        <button
+          id="nav-tab-mediator"
+          onClick={() => onTabChange('mediator')}
+          className={`flex items-center gap-1.5 py-2.5 px-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+            currentTab === 'mediator'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+          }`}
+        >
+          <Network className="w-3.5 h-3.5 text-indigo-600" />
+          <span>Multi-Agent Mediator &amp; Reliability</span>
+          <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.2 rounded-full font-mono">
+            Phase 5
           </span>
         </button>
       </div>

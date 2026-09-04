@@ -11,6 +11,8 @@ import { SpecializedAIConfig } from './components/SpecializedAIConfig';
 import { KnowledgeVersioningView } from './components/KnowledgeVersioningView';
 import { EvaluationCenter } from './components/EvaluationCenter';
 import { DeveloperPlatform } from './components/DeveloperPlatform';
+import { Phase4LearningSandbox } from './components/Phase4LearningSandbox';
+import { MediatorOrchestrationView } from './components/MediatorOrchestrationView';
 import { DocumentViewerModal } from './components/DocumentViewerModal';
 import { TestSuiteModal } from './components/TestSuiteModal';
 import { NewKnowledgeBaseModal } from './components/NewKnowledgeBaseModal';
@@ -395,11 +397,12 @@ export default function App() {
     }
   };
 
-  // Run Acceptance Test Suite (10-pts)
-  const handleRunTestSuite = async () => {
+  // Run Acceptance Test Suite (Phase 4 50-pts or Phase 1 10-pts)
+  const handleRunTestSuite = async (suite: 'phase4' | 'phase1' = 'phase4') => {
     setIsRunningTests(true);
     try {
-      const res = await fetch('/api/kb/run-tests', {
+      const endpoint = suite === 'phase4' ? '/api/v1/tests/phase4' : '/api/kb/run-tests';
+      const res = await fetch(endpoint, {
         method: 'POST',
       });
       const data = await res.json();
@@ -416,7 +419,7 @@ export default function App() {
   const handleOpenTestSuiteModal = () => {
     setIsTestSuiteModalOpen(true);
     if (testResults.length === 0) {
-      handleRunTestSuite();
+      handleRunTestSuite('phase4');
     }
   };
 
@@ -556,6 +559,16 @@ export default function App() {
         {/* Tab 5: Developer Platform & REST API */}
         {currentTab === 'developer' && (
           <DeveloperPlatform activeKb={activeKb} />
+        )}
+
+        {/* Tab 6: Phase 4 Memory & Controlled Learning Sandbox */}
+        {currentTab === 'sandbox' && (
+          <Phase4LearningSandbox activeKb={activeKb} />
+        )}
+
+        {/* Tab 7: Phase 5 Multi-Agent Mediator & Reliability */}
+        {currentTab === 'mediator' && (
+          <MediatorOrchestrationView activeKbId={activeKb?.id} onOpenTestModal={() => setIsTestSuiteModalOpen(true)} />
         )}
       </div>
 

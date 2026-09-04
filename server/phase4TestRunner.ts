@@ -5,12 +5,29 @@ import { sandboxService } from './sandboxService.js';
 import { learningService } from './learningService.js';
 import { specializedAIService } from './specializedAIService.js';
 import { kbStore } from './kbStore.js';
+import { generateSampleDocs } from './sampleDocs.js';
+import { parsePdfBuffer, createKnowledgeDocument } from './documentService.js';
 
 export async function runPhase4AcceptanceTests(): Promise<TestResultItem[]> {
   const results: TestResultItem[] = [];
   const testAccount = 'acc_phase4_tester';
   const otherAccount = 'acc_phase4_intruder';
   const defaultKb = kbStore.getActiveKB();
+
+  // Ensure test knowledge base has processed sample documents for grounding tests
+  if (!defaultKb.documents || defaultKb.documents.length === 0) {
+    try {
+      const samples = await generateSampleDocs();
+      for (const s of samples) {
+        const { pageCount, pages, summary } = await parsePdfBuffer(s.filename, s.buffer);
+        const doc = createKnowledgeDocument(s.filename, s.buffer, pageCount, pages, summary);
+        kbStore.addDocument(defaultKb.id, doc);
+      }
+    } catch (err) {
+      console.warn('Could not auto-seed sample docs in phase4 tests:', err);
+    }
+  }
+
   const testAiId = defaultKb.specializedAi.id;
 
   const runTest = async (
