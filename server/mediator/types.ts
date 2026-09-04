@@ -22,7 +22,16 @@ export type FaultInjectionMode =
   | 'PROMPT_INJECTION'
   | 'FABRICATED_CITATION'
   | 'PROVENANCE_TAMPERING'
-  | 'SLOW_RESPONSE';
+  | 'SLOW_RESPONSE'
+  | 'CORRECT'
+  | 'WRONG'
+  | 'AMBIGUOUS'
+  | 'CONTRADICTORY'
+  | 'HIGH_CONFIDENCE_WRONG'
+  | 'CORRELATED_WRONG'
+  | 'MALICIOUS_SYNTHESIS'
+  | 'TRUSTED_SOURCE_CONFLICT'
+  | 'LOW_INFORMATION_GAIN';
 
 export interface AgentCapability {
   name: string;
@@ -72,7 +81,21 @@ export interface OrchestrationEvent {
     | 'TASK_FAILED'
     | 'DISAGREEMENT_DETECTED'
     | 'ESCALATION_TRIGGERED'
-    | 'SECURITY_ALERT';
+    | 'SECURITY_ALERT'
+    | 'ADAPTIVE_PLAN_CREATED'
+    | 'COMPLEXITY_ASSESSED'
+    | 'RISK_ASSESSED'
+    | 'STRATEGY_SELECTED'
+    | 'AGENT_COUNT_SELECTED'
+    | 'AGENT_ADDED'
+    | 'AGENT_REMOVED'
+    | 'EVIDENCE_COLLECTED'
+    | 'VERIFICATION_REQUESTED'
+    | 'ESCALATION_STARTED'
+    | 'ESCALATION_STOPPED'
+    | 'STOP_CONDITION_REACHED'
+    | 'BUDGET_LIMIT_REACHED'
+    | 'FINAL_DECISION';
   agentId?: string;
   provider?: string;
   payloadHash: string;

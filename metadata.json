@@ -1,6 +1,6 @@
 {
   "name": "Knowledge AI",
-  "description": "Developer platform and document-grounded Specialized AI service with multi-agent orchestration, reliability, adversarial evaluation, and controlled learning sandbox.",
+  "description": "Developer platform and document-grounded Specialized AI service with adaptive evidence-driven multi-agent orchestration, adversarial evaluation, and controlled learning sandbox.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -23,6 +23,14 @@ import { benchmarkRunner } from './server/mediator/benchmarkRunner.js';
 import { runMediatorPhase3Tests } from './server/mediator/mediatorPhase3Runner.js';
 import { runMediatorPhase4Tests } from './server/mediator/mediatorPhase4Runner.js';
 import { runMediatorPhase5Tests } from './server/mediator/mediatorPhase5Runner.js';
+import { runMediatorPhase6Tests } from './server/mediator/mediatorPhase6Runner.js';
+import { adaptiveOrchestrator } from './server/mediator/adaptiveOrchestrator.js';
+import { adaptiveBenchmarkEngine } from './server/mediator/adaptiveBenchmarkEngine.js';
+import { taskComplexityAnalyzer } from './server/mediator/taskComplexityAnalyzer.js';
+import { riskAssessmentEngine } from './server/mediator/riskAssessmentEngine.js';
+import { adaptiveStrategyPlanner } from './server/mediator/adaptiveStrategyPlanner.js';
+import { adaptiveDisagreementDetector } from './server/mediator/adaptiveDisagreementDetector.js';
+import { independentVerifier } from './server/mediator/independentVerifier.js';
 import { ChatMessage, ApiChatRequest, ApiChatResponse, ApiErrorResponse, MemoryStatus, MemoryType, ExperienceSource } from './src/types.js';
 import crypto from 'crypto';
 
@@ -915,6 +923,33 @@ app.post('/api/v1/tests/mediator-phase5', async (req, res) => {
   }
 });
 
+// Run Mediator Phase 6 Adaptive Evidence-Driven Battery (54 tests)
+app.post('/api/v1/tests/mediator-phase6', async (req, res) => {
+  try {
+    const results = await runMediatorPhase6Tests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Mediator Phase 6 tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Mediator Phase 6 tests' });
+  }
+});
+
+app.post('/api/v1/mediator/tests/phase6', async (req, res) => {
+  try {
+    const results = await runMediatorPhase6Tests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Mediator Phase 6 tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Mediator Phase 6 tests' });
+  }
+});
+
 // --- 2. AUTHENTICATED REST API ROUTES (/api/v1/ai/:ai_id/...) ---
 
 // GET /api/v1/ai/:ai_id/memories
@@ -1780,16 +1815,113 @@ app.get('/api/v1/mediator/runs/:runId', (req, res) => {
 // Execute task through multi-agent mediator
 app.post('/api/v1/mediator/execute', async (req, res) => {
   try {
-    const { taskPrompt, subtaskPrompts, config } = req.body || {};
+    const { taskPrompt, subtaskPrompts, config, mode, faultMode, correlationGroup, customClaims, maxAgents, maxEscalationRounds, kbId } = req.body || {};
     if (!taskPrompt) {
       return res.status(400).json({ error: 'taskPrompt is required' });
     }
+
+    if (mode === 'ADAPTIVE' || (!subtaskPrompts && mode !== 'FIXED')) {
+      const adaptiveResult = await adaptiveOrchestrator.executeRun({
+        taskPrompt,
+        orchestrationMode: mode || 'ADAPTIVE',
+        seed: config?.seed,
+        kbId,
+        faultMode,
+        customClaims,
+        maxAgents,
+        maxEscalationRounds,
+        timeoutMs: config?.globalTimeoutMs,
+        correlationGroup,
+      });
+      return res.json({
+        run: adaptiveResult.underlyingOrchestrationRun,
+        adaptiveResult,
+      });
+    }
+
     const run = await orchestrationEngine.executeRun({
       taskPrompt,
       subtaskPrompts,
       config,
+      kbId,
     });
     res.json({ run });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 6: Plan task topology & agent count without execution
+app.post('/api/v1/mediator/plan', (req, res) => {
+  try {
+    const { taskPrompt, mode } = req.body || {};
+    if (!taskPrompt) return res.status(400).json({ error: 'taskPrompt is required' });
+    const complexity = taskComplexityAnalyzer.analyze(taskPrompt);
+    const risk = riskAssessmentEngine.assess(taskPrompt, complexity);
+    const availableAgents = agentRegistry.listAgents();
+    const plan = adaptiveStrategyPlanner.plan(taskPrompt, complexity, risk, availableAgents, mode || 'ADAPTIVE');
+    res.json({ plan, complexity, risk });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 6: Analyze claims for contradictions and unsupported consensus
+app.post('/api/v1/mediator/disagreements/analyze', (req, res) => {
+  try {
+    const { claims } = req.body || {};
+    if (!claims || !Array.isArray(claims)) {
+      return res.status(400).json({ error: 'claims array is required' });
+    }
+    const result = adaptiveDisagreementDetector.analyzeDisagreements(claims);
+    res.json({ result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 6: Independent verification pass against authoritative grounding
+app.post('/api/v1/mediator/verify', async (req, res) => {
+  try {
+    const { claims, targetClaims, kbId } = req.body || {};
+    if (!claims || !Array.isArray(claims)) {
+      return res.status(400).json({ error: 'claims array is required' });
+    }
+    const result = await independentVerifier.verify(claims, targetClaims || [], kbId);
+    res.json({ result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 6: List adaptive runs
+app.get('/api/v1/mediator/adaptive/runs', (req, res) => {
+  try {
+    const runs = adaptiveOrchestrator.getAllRuns();
+    res.json({ runs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 6: Get specific adaptive run
+app.get('/api/v1/mediator/adaptive/runs/:runId', (req, res) => {
+  try {
+    const { runId } = req.params;
+    const run = adaptiveOrchestrator.getRun(runId);
+    if (!run) return res.status(404).json({ error: 'Adaptive run not found' });
+    res.json({ adaptiveRun: run });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 6: Comparative benchmark (FIXED_1, FIXED_4, FIXED_10, ADAPTIVE)
+app.post('/api/v1/mediator/benchmarks/compare', async (req, res) => {
+  try {
+    const { seed } = req.body || {};
+    const result = await adaptiveBenchmarkEngine.runComparativeBenchmark(seed ? parseInt(seed, 10) : 42);
+    res.json({ result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

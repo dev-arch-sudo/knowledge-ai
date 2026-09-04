@@ -23,7 +23,9 @@ import {
   Hash,
   Clock,
   ArrowRight,
+  Scale,
 } from 'lucide-react';
+import { AdaptiveEvidenceStudio } from './AdaptiveEvidenceStudio.js';
 import {
   OrchestrationRun,
   BenchmarkMetrics,
@@ -37,7 +39,7 @@ interface MediatorProps {
 }
 
 export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId, onOpenTestModal }) => {
-  const [activeTab, setActiveTab] = useState<'runs' | 'dispatch' | 'benchmarks' | 'tests' | 'security'>('runs');
+  const [activeTab, setActiveTab] = useState<'runs' | 'dispatch' | 'adaptive' | 'benchmarks' | 'tests' | 'security'>('adaptive');
   const [runs, setRuns] = useState<OrchestrationRun[]>([]);
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
   const [metrics, setMetrics] = useState<BenchmarkMetrics | null>(null);
@@ -58,6 +60,9 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
   const [benchmarkResult, setBenchmarkResult] = useState<any>(null);
 
   // Test Suite State
+  const [selectedTestSuite, setSelectedTestSuite] = useState<'PHASE6' | 'PHASE5'>('PHASE6');
+  const [phase6Results, setPhase6Results] = useState<TestResultItem[]>([]);
+  const [runningPhase6Tests, setRunningPhase6Tests] = useState(false);
   const [phase5Results, setPhase5Results] = useState<TestResultItem[]>([]);
   const [runningTests, setRunningTests] = useState(false);
   const [testFilter, setTestFilter] = useState<'ALL' | 'RELIABILITY' | 'REASONING' | 'SECURITY' | 'PROVENANCE' | 'LEARNING' | 'REGRESSION'>('ALL');
@@ -182,6 +187,21 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
     }
   };
 
+  const runPhase6TestSuite = async () => {
+    setRunningPhase6Tests(true);
+    try {
+      const res = await fetch('/api/v1/tests/mediator-phase6', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setPhase6Results(data.results || []);
+      }
+    } catch (err) {
+      console.error('Failed to run Phase 6 suite', err);
+    } finally {
+      setRunningPhase6Tests(false);
+    }
+  };
+
   const runPhase5TestSuite = async () => {
     setRunningTests(true);
     try {
@@ -197,18 +217,36 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
     }
   };
 
-  const filteredTests = phase5Results.filter((t) => {
+  const activeTestResults = selectedTestSuite === 'PHASE6' ? phase6Results : phase5Results;
+
+  const filteredTests = activeTestResults.filter((t) => {
     if (testFilter === 'ALL') return true;
-    if (testFilter === 'RELIABILITY') return t.id >= 1 && t.id <= 13;
-    if (testFilter === 'REASONING') return t.id >= 14 && t.id <= 22;
-    if (testFilter === 'SECURITY') return t.id >= 23 && t.id <= 32;
-    if (testFilter === 'PROVENANCE') return t.id >= 33 && t.id <= 40;
-    if (testFilter === 'LEARNING') return t.id >= 41 && t.id <= 47;
-    if (testFilter === 'REGRESSION') return t.id >= 48 && t.id <= 51;
+    if (selectedTestSuite === 'PHASE5') {
+      if (testFilter === 'RELIABILITY') return t.id >= 1 && t.id <= 13;
+      if (testFilter === 'REASONING') return t.id >= 14 && t.id <= 22;
+      if (testFilter === 'SECURITY') return t.id >= 23 && t.id <= 32;
+      if (testFilter === 'PROVENANCE') return t.id >= 33 && t.id <= 40;
+      if (testFilter === 'LEARNING') return t.id >= 41 && t.id <= 47;
+      if (testFilter === 'REGRESSION') return t.id >= 48 && t.id <= 51;
+    } else {
+      // Phase 6 groups
+      if (testFilter === 'PLANNING') return t.id >= 1 && t.id <= 5;
+      if (testFilter === 'AGENT_SCALING') return t.id >= 6 && t.id <= 10;
+      if (testFilter === 'INDEPENDENCE') return t.id >= 11 && t.id <= 15;
+      if (testFilter === 'VERIFICATION') return t.id >= 16 && t.id <= 20;
+      if (testFilter === 'CONSENSUS_INVARIANT') return t.id >= 21 && t.id <= 25;
+      if (testFilter === 'CALIBRATION') return t.id >= 26 && t.id <= 30;
+      if (testFilter === 'SECURITY') return t.id >= 31 && t.id <= 35;
+      if (testFilter === 'BOUNDEDNESS') return t.id >= 36 && t.id <= 40;
+      if (testFilter === 'BENCHMARKS') return t.id >= 41 && t.id <= 45;
+      if (testFilter === 'REGRESSION') return t.id >= 46 && t.id <= 54;
+    }
     return true;
   });
 
-  const passedTestsCount = phase5Results.filter((t) => t.status === 'passed').length;
+  const passedTestsCount = activeTestResults.filter((t) => t.status === 'passed').length;
+  const passedPhase6Count = phase6Results.filter((t) => t.status === 'passed').length;
+  const passedPhase5Count = phase5Results.filter((t) => t.status === 'passed').length;
 
   return (
     <div id="mediator-dashboard" className="flex flex-col h-full bg-slate-900 text-slate-100 overflow-hidden font-sans">
@@ -250,11 +288,16 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
             <span className="text-slate-300 font-mono">Mediator P4:</span>
             <span className="text-emerald-400 font-bold font-mono">21/21</span>
           </div>
+          <div className="px-3 py-1 rounded bg-slate-900 border border-slate-800 flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-slate-300 font-mono">Mediator P5:</span>
+            <span className="text-emerald-400 font-bold font-mono">51/51</span>
+          </div>
           <div className="px-3 py-1 rounded bg-indigo-950/50 border border-indigo-500/40 flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-slate-200 font-mono">Phase 5 Suite:</span>
+            <Scale className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-slate-200 font-mono">Phase 6 Suite:</span>
             <span className="text-indigo-300 font-bold font-mono">
-              {phase5Results.length > 0 ? `${passedTestsCount}/${phase5Results.length}` : '51 Available'}
+              {phase6Results.length > 0 ? `${passedPhase6Count}/${phase6Results.length}` : '54 Ready'}
             </span>
           </div>
           <button
@@ -345,6 +388,18 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
       {/* NAVIGATION TABS */}
       <div className="flex border-b border-slate-800 bg-slate-950 px-6 gap-2 text-xs font-medium">
         <button
+          id="tab-adaptive-studio"
+          onClick={() => setActiveTab('adaptive')}
+          className={`py-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeTab === 'adaptive'
+              ? 'border-indigo-500 text-indigo-300 font-semibold'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Scale className="w-4 h-4" /> Adaptive Evidence Studio (Phase 6)
+        </button>
+
+        <button
           id="tab-run-inspector"
           onClick={() => setActiveTab('runs')}
           className={`py-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 ${
@@ -401,12 +456,23 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <CheckCircle2 className="w-4 h-4" /> Test Matrix (51/51 Tests)
+          <CheckCircle2 className="w-4 h-4" /> Test Matrix ({phase6Results.length > 0 ? passedPhase6Count : 54}/54 Tests)
         </button>
       </div>
 
       {/* TAB CONTENT AREA */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* ========================================================================= */}
+        {/* TAB: ADAPTIVE EVIDENCE STUDIO (PHASE 6) */}
+        {/* ========================================================================= */}
+        {activeTab === 'adaptive' && (
+          <AdaptiveEvidenceStudio
+            onRunExecuted={(newRun) => {
+              setSelectedRun(newRun);
+              fetchState();
+            }}
+          />
+        )}
         {/* ========================================================================= */}
         {/* TAB 1: RUN INSPECTOR & DAG */}
         {/* ========================================================================= */}
@@ -1034,64 +1100,138 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 5: TEST MATRIX (51 TESTS) */}
+        {/* TAB 5: TEST MATRIX (PHASE 6 & PHASE 5) */}
         {/* ========================================================================= */}
         {activeTab === 'tests' && (
           <div className="space-y-6">
+            {/* Battery Selector Bar */}
+            <div className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
+              <span className="text-xs font-mono text-slate-400 pl-2">Select Test Battery:</span>
+              <button
+                id="btn-select-phase6-suite"
+                onClick={() => {
+                  setSelectedTestSuite('PHASE6');
+                  setTestFilter('ALL');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+                  selectedTestSuite === 'PHASE6'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <Scale className="w-3.5 h-3.5" /> Phase 6: Adaptive Evidence (54 Tests)
+                {phase6Results.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px]">
+                    {passedPhase6Count}/54
+                  </span>
+                )}
+              </button>
+
+              <button
+                id="btn-select-phase5-suite"
+                onClick={() => {
+                  setSelectedTestSuite('PHASE5');
+                  setTestFilter('ALL');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+                  selectedTestSuite === 'PHASE5'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" /> Phase 5: Reliability &amp; Adversarial (51 Tests)
+                {phase5Results.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px]">
+                    {passedPhase5Count}/51
+                  </span>
+                )}
+              </button>
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-900 border border-slate-800 rounded-xl">
               <div>
                 <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  Phase 5 Acceptance Battery (51 Total Tests)
+                  {selectedTestSuite === 'PHASE6'
+                    ? 'Phase 6 Adaptive Evidence-Driven Battery (54 Total Tests)'
+                    : 'Phase 5 Acceptance Battery (51 Total Tests)'}
                 </h3>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">
-                  Reliability (1-13) &bull; Multi-Agent Reasoning (14-22) &bull; Security (23-32) &bull; Provenance (33-40) &bull; Controlled Learning (41-47) &bull; Regression (48-51)
+                  {selectedTestSuite === 'PHASE6'
+                    ? 'Planning (1-5) • Scaling (6-10) • Independence (11-15) • Verification (16-20) • Consensus Invariant (21-25) • Calibration (26-30) • Security (31-35) • Boundedness (36-40) • Benchmarks (41-45) • Regression (46-54)'
+                    : 'Reliability (1-13) • Reasoning (14-22) • Security (23-32) • Provenance (33-40) • Controlled Learning (41-47) • Regression (48-51)'}
                 </p>
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  id="btn-run-all-phase5-tests"
-                  onClick={runPhase5TestSuite}
-                  disabled={runningTests}
-                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-semibold text-xs flex items-center gap-2 transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${runningTests ? 'animate-spin' : ''}`} />
-                  {runningTests ? 'Running Battery...' : 'Run All 51 Phase 5 Tests'}
-                </button>
+                {selectedTestSuite === 'PHASE6' ? (
+                  <button
+                    id="btn-run-all-phase6-tests"
+                    onClick={runPhase6TestSuite}
+                    disabled={runningPhase6Tests}
+                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-semibold text-xs flex items-center gap-2 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${runningPhase6Tests ? 'animate-spin' : ''}`} />
+                    {runningPhase6Tests ? 'Running Battery...' : 'Run All 54 Phase 6 Tests'}
+                  </button>
+                ) : (
+                  <button
+                    id="btn-run-all-phase5-tests"
+                    onClick={runPhase5TestSuite}
+                    disabled={runningTests}
+                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-semibold text-xs flex items-center gap-2 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${runningTests ? 'animate-spin' : ''}`} />
+                    {runningTests ? 'Running Battery...' : 'Run All 51 Phase 5 Tests'}
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Filter Pills */}
             <div className="flex flex-wrap gap-2 text-xs font-mono">
-              {(['ALL', 'RELIABILITY', 'REASONING', 'SECURITY', 'PROVENANCE', 'LEARNING', 'REGRESSION'] as const).map(
-                (grp) => (
-                  <button
-                    key={grp}
-                    onClick={() => setTestFilter(grp)}
-                    className={`px-3 py-1 rounded-lg border transition-colors ${
-                      testFilter === grp
-                        ? 'bg-indigo-600 border-indigo-500 text-white font-bold'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
-                    }`}
-                  >
-                    {grp}
-                  </button>
-                )
-              )}
+              {(selectedTestSuite === 'PHASE6'
+                ? [
+                    'ALL',
+                    'PLANNING',
+                    'AGENT_SCALING',
+                    'INDEPENDENCE',
+                    'VERIFICATION',
+                    'CONSENSUS_INVARIANT',
+                    'CALIBRATION',
+                    'SECURITY',
+                    'BOUNDEDNESS',
+                    'BENCHMARKS',
+                    'REGRESSION',
+                  ]
+                : ['ALL', 'RELIABILITY', 'REASONING', 'SECURITY', 'PROVENANCE', 'LEARNING', 'REGRESSION']
+              ).map((grp) => (
+                <button
+                  key={grp}
+                  onClick={() => setTestFilter(grp as any)}
+                  className={`px-3 py-1 rounded-lg border transition-colors ${
+                    testFilter === grp
+                      ? 'bg-indigo-600 border-indigo-500 text-white font-bold'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  {grp}
+                </button>
+              ))}
             </div>
 
             {/* Test Results Table */}
             <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
-              {phase5Results.length === 0 ? (
+              {activeTestResults.length === 0 ? (
                 <div className="p-8 text-center text-slate-500 font-mono text-xs">
-                  Click &ldquo;Run All 51 Phase 5 Tests&rdquo; to execute the full multi-agent evaluation and regression battery.
+                  Click &ldquo;Run All {selectedTestSuite === 'PHASE6' ? '54 Phase 6' : '51 Phase 5'} Tests&rdquo; to execute the evaluation and regression battery.
                 </div>
               ) : (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between font-mono text-xs text-slate-400 pb-2 border-b border-slate-800">
                     <span>
-                      Passing: <strong className="text-emerald-400">{passedTestsCount}</strong> / {phase5Results.length}
+                      Passing: <strong className="text-emerald-400">{passedTestsCount}</strong> /{' '}
+                      {activeTestResults.length}
                     </span>
                     <span>100% Invariant Compliance Target</span>
                   </div>

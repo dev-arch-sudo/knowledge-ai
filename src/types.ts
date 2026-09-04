@@ -684,5 +684,200 @@ export interface BenchmarkMetrics {
   };
 }
 
+// =========================================================================
+// PHASE 6: ADAPTIVE EVIDENCE-DRIVEN MULTI-AGENT TYPES
+// =========================================================================
+
+export type OrchestrationMode = 'FIXED' | 'ADAPTIVE';
+
+export type AdaptiveStrategy =
+  | 'SINGLE_AGENT'
+  | 'PARALLEL'
+  | 'SEQUENTIAL'
+  | 'HYBRID'
+  | 'ESCALATED';
+
+export interface TaskComplexityProfile {
+  taskPrompt: string;
+  complexityScore: number; // 0.0 - 1.0
+  domainCount: number;
+  subtaskCount: number;
+  dependencyCount: number;
+  uncertaintyLevel: number;
+  adversarialRisk: number;
+  contradictionRisk: number;
+  suggestedTopology: AdaptiveStrategy;
+  suggestedAgentCount: number;
+  rationale: string[];
+}
+
+export interface TaskRiskProfile {
+  overallRiskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  securityRisk: number;
+  factualRisk: number;
+  hallucinationRisk: number;
+  contradictionImpact: number;
+  requiresIndependentVerifier: boolean;
+  rationale: string[];
+}
+
+export interface AgentAssignmentPlan {
+  agentId: string;
+  role: string;
+  capability: string;
+  domain: string;
+}
+
+export interface AdaptivePlan {
+  taskPrompt: string;
+  orchestrationMode: OrchestrationMode;
+  strategy: AdaptiveStrategy;
+  complexity: TaskComplexityProfile;
+  risk: TaskRiskProfile;
+  initialAgentCount: number;
+  selectedAgents: AgentAssignmentPlan[];
+  budgetLimits: {
+    minAgents: number;
+    maxAgents: number;
+    maxEscalationRounds: number;
+    maxTotalAgentCalls: number;
+    maxExecutionTimeMs: number;
+    maxEstimatedCostUnits: number;
+    maxDelegationDepth: number;
+  };
+  rationale: string[];
+}
+
+export interface AdaptiveBudget {
+  agentCalls: number;
+  parallelAgentCalls: number;
+  executionTimeMs: number;
+  estimatedCostUnits: number;
+  tokensIn: number;
+  tokensOut: number;
+  retries: number;
+  reassignments: number;
+  verificationCalls: number;
+  escalationRounds: number;
+}
+
+export interface AdaptiveEscalationRecord {
+  round: number;
+  escalationReason: string;
+  previousEvidenceSummary: string;
+  newCapabilityRequested: string;
+  newAgentAdded: string;
+  expectedInformationGain: number;
+  actualInformationGain: number;
+}
+
+export interface EvidenceClaim {
+  claimId: string;
+  text: string;
+  agentId: string;
+  providerId: string;
+  evidenceRefs: string[];
+  supportStatus: 'SUPPORTED' | 'CONTRADICTED' | 'UNCERTAIN' | 'UNSUPPORTED';
+  independenceScore: number;
+  provenance: ClaimProvenance;
+}
+
+export interface EvidenceIndependenceProfile {
+  overallIndependenceScore: number;
+  sourceOverlap: number;
+  promptOverlap: number;
+  providerOverlap: number;
+  correlatedAgentGroups: string[][];
+  isCorrelated: boolean;
+}
+
+export interface ConfidenceCalibrationProfile {
+  reportedConfidence: number;
+  calibratedConfidence: number;
+  evidenceSupportScore: number;
+  groundingStatus: VerificationClassification;
+  isFalseConfidence: boolean;
+  flags: string[];
+}
+
+export interface TrustedSourceConflictRecord {
+  conflictId: string;
+  sourceA: string;
+  sourceB: string;
+  versionA?: string;
+  versionB?: string;
+  claimA: string;
+  claimB: string;
+  contradictionType: string;
+  detectedAt: number;
+}
+
+export type StopConditionType =
+  | 'EVIDENCE_SUFFICIENT'
+  | 'AUTHORITATIVE_CONTRADICTION'
+  | 'INSUFFICIENT_EVIDENCE'
+  | 'BUDGET_EXHAUSTED'
+  | 'TIME_LIMIT_REACHED'
+  | 'ESCALATION_LIMIT_REACHED'
+  | 'NEGLIGIBLE_INFORMATION_GAIN'
+  | 'SECURITY_BOUNDARY_TRIGGERED';
+
+export interface StopCondition {
+  condition: StopConditionType;
+  reason: string;
+  stopTimestamp: number;
+}
+
+export interface AdaptiveRunResult {
+  runId: string;
+  orchestrationMode: OrchestrationMode;
+  plan: AdaptivePlan;
+  budget: AdaptiveBudget;
+  escalations: AdaptiveEscalationRecord[];
+  evidenceClaims: EvidenceClaim[];
+  independenceProfile: EvidenceIndependenceProfile;
+  confidenceCalibration: ConfidenceCalibrationProfile;
+  trustedSourceConflict?: TrustedSourceConflictRecord;
+  stopCondition: StopCondition;
+  finalDecision: {
+    classification: VerificationClassification;
+    consensusSignal: string;
+    evidenceSignal: string;
+    rationale: string;
+    summary: string;
+  };
+  unsupportedSynthesisClaims: string[];
+  underlyingOrchestrationRun: OrchestrationRun;
+}
+
+export interface BenchmarkConfigComparison {
+  accuracy: number;
+  verificationRate: number;
+  unsupportedClaimRate: number;
+  falseConfidenceRate: number;
+  avgAgents: number;
+  avgLatencyMs: number;
+  escalationRate: number;
+  unnecessaryAgentRate: number;
+  parallelSpeedup: number;
+  budgetUtilization: number;
+  totalCostUnits: number;
+}
+
+export interface ComparativeBenchmarkResult {
+  id: string;
+  name: string;
+  seed: number;
+  timestamp: number;
+  configurations: {
+    FIXED_1: BenchmarkConfigComparison;
+    FIXED_4: BenchmarkConfigComparison;
+    FIXED_10: BenchmarkConfigComparison;
+    ADAPTIVE: BenchmarkConfigComparison;
+  };
+  summaryAnalysis: string;
+  efficiencyVerdict: string;
+}
+
 
 
