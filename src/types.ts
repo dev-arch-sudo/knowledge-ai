@@ -140,9 +140,11 @@ export interface TestResultItem {
   id: number;
   name: string;
   status: 'pending' | 'running' | 'passed' | 'failed';
+  passed?: boolean;
   details?: string;
   expected?: string;
   actual?: string;
+  durationMs?: number;
 }
 
 export interface ApiKey {
@@ -526,9 +528,11 @@ export interface AgentClaim {
   subtaskId: string;
   agentId: string;
   claimText: string;
+  text?: string;
   confidence: number;
   supportingCitations: string[];
   systemAsserted: boolean;
+  groundingStatus?: 'GROUNDED' | 'UNSUPPORTED' | 'CONTRADICTED';
   agentClaimedProvenance?: {
     claimedSource: string;
     claimedVerified: boolean;
@@ -540,6 +544,7 @@ export interface ProvenanceTrace {
   taskId: string;
   subtaskId?: string;
   agentId: string;
+  sourceAgentId?: string;
   provider: string;
   timestamp: number;
   claimedByAgent: boolean;
@@ -779,7 +784,7 @@ export interface EvidenceClaim {
   evidenceRefs: string[];
   supportStatus: 'SUPPORTED' | 'CONTRADICTED' | 'UNCERTAIN' | 'UNSUPPORTED';
   independenceScore: number;
-  provenance: ClaimProvenance;
+  provenance: ProvenanceTrace;
 }
 
 export interface EvidenceIndependenceProfile {

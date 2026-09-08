@@ -90,6 +90,19 @@ export class AdaptiveOrchestrator {
       plan.budgetLimits.maxEscalationRounds = params.maxEscalationRounds;
     }
 
+    // If customClaims are provided and exceed selectedAgents, expand agents to match claims
+    if (params.customClaims && params.customClaims.length > plan.selectedAgents.length) {
+      while (plan.selectedAgents.length < params.customClaims.length) {
+        const idx = plan.selectedAgents.length + 1;
+        plan.selectedAgents.push({
+          agentId: `agent-custom-${idx}`,
+          role: `Domain Specialist ${idx}`,
+          capability: 'Empirical Verification & Claim Formulation',
+          domain: 'telemetry_or_general',
+        });
+      }
+    }
+
     // 3. Initialize Budget Controller
     const budgetController = new AgentBudgetController(plan.budgetLimits);
 

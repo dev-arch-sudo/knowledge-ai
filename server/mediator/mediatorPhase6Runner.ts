@@ -16,7 +16,7 @@ import { AgentBudgetController } from './agentBudgetController.js';
 import { adaptiveDisagreementDetector } from './adaptiveDisagreementDetector.js';
 import { verificationPlanner } from './verificationPlanner.js';
 import { independentVerifier } from './independentVerifier.js';
-import { escalationController } from './escalationController.js';
+import { EscalationController, escalationController } from './escalationController.js';
 import { stopConditionEvaluator } from './stopConditionEvaluator.js';
 import { confidenceCalibrator } from './confidenceCalibrator.js';
 import { trustedKnowledgeConflictDetector } from './trustedKnowledgeDetector.js';

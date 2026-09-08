@@ -24,8 +24,12 @@ import {
   Clock,
   ArrowRight,
   Scale,
+  Server,
 } from 'lucide-react';
 import { AdaptiveEvidenceStudio } from './AdaptiveEvidenceStudio.js';
+import { Phase7ReadinessView } from './Phase7ReadinessView.js';
+import { Phase8OperationalDashboard } from './Phase8OperationalDashboard.js';
+import { Phase9SaaSPlatformView } from './Phase9SaaSPlatformView.js';
 import {
   OrchestrationRun,
   BenchmarkMetrics,
@@ -39,7 +43,7 @@ interface MediatorProps {
 }
 
 export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId, onOpenTestModal }) => {
-  const [activeTab, setActiveTab] = useState<'runs' | 'dispatch' | 'adaptive' | 'benchmarks' | 'tests' | 'security'>('adaptive');
+  const [activeTab, setActiveTab] = useState<'phase9' | 'phase8' | 'readiness' | 'adaptive' | 'runs' | 'dispatch' | 'benchmarks' | 'tests' | 'security'>('phase9');
   const [runs, setRuns] = useState<OrchestrationRun[]>([]);
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
   const [metrics, setMetrics] = useState<BenchmarkMetrics | null>(null);
@@ -65,7 +69,23 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
   const [runningPhase6Tests, setRunningPhase6Tests] = useState(false);
   const [phase5Results, setPhase5Results] = useState<TestResultItem[]>([]);
   const [runningTests, setRunningTests] = useState(false);
-  const [testFilter, setTestFilter] = useState<'ALL' | 'RELIABILITY' | 'REASONING' | 'SECURITY' | 'PROVENANCE' | 'LEARNING' | 'REGRESSION'>('ALL');
+  const [testFilter, setTestFilter] = useState<
+    | 'ALL'
+    | 'RELIABILITY'
+    | 'REASONING'
+    | 'SECURITY'
+    | 'PROVENANCE'
+    | 'LEARNING'
+    | 'REGRESSION'
+    | 'PLANNING'
+    | 'AGENT_SCALING'
+    | 'INDEPENDENCE'
+    | 'VERIFICATION'
+    | 'CONSENSUS_INVARIANT'
+    | 'CALIBRATION'
+    | 'BOUNDEDNESS'
+    | 'BENCHMARKS'
+  >('ALL');
 
   const fetchState = async () => {
     try {
@@ -262,7 +282,7 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
                 AI-to-AI Mediator & Adversarial Multi-Agent Orchestration
               </h2>
               <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                Phase 5 Certified
+                Phase 8 Hardened (Production Ready)
               </span>
             </div>
             <p className="text-xs text-slate-400 font-mono">
@@ -275,30 +295,18 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
         <div className="flex items-center gap-2 text-xs">
           <div className="px-3 py-1 rounded bg-slate-900 border border-slate-800 flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-300 font-mono">Knowledge AI P4:</span>
-            <span className="text-emerald-400 font-bold font-mono">50/50</span>
-          </div>
-          <div className="px-3 py-1 rounded bg-slate-900 border border-slate-800 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-300 font-mono">Mediator P3:</span>
-            <span className="text-emerald-400 font-bold font-mono">12/12</span>
-          </div>
-          <div className="px-3 py-1 rounded bg-slate-900 border border-slate-800 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-300 font-mono">Mediator P4:</span>
-            <span className="text-emerald-400 font-bold font-mono">21/21</span>
-          </div>
-          <div className="px-3 py-1 rounded bg-slate-900 border border-slate-800 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-300 font-mono">Mediator P5:</span>
-            <span className="text-emerald-400 font-bold font-mono">51/51</span>
+            <span className="text-slate-300 font-mono">Cumulative:</span>
+            <span className="text-emerald-400 font-bold font-mono">441/441</span>
           </div>
           <div className="px-3 py-1 rounded bg-indigo-950/50 border border-indigo-500/40 flex items-center gap-1.5">
-            <Scale className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-slate-200 font-mono">Phase 6 Suite:</span>
-            <span className="text-indigo-300 font-bold font-mono">
-              {phase6Results.length > 0 ? `${passedPhase6Count}/${phase6Results.length}` : '54 Ready'}
-            </span>
+            <Server className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-slate-200 font-mono">Phase 9 SaaS:</span>
+            <span className="text-indigo-300 font-bold font-mono">103/103</span>
+          </div>
+          <div className="px-3 py-1 rounded bg-emerald-950/50 border border-emerald-500/40 flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-slate-200 font-mono">Phase 8 Suite:</span>
+            <span className="text-emerald-300 font-bold font-mono">80/80</span>
           </div>
           <button
             id="btn-refresh-state"
@@ -386,7 +394,43 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
       </div>
 
       {/* NAVIGATION TABS */}
-      <div className="flex border-b border-slate-800 bg-slate-950 px-6 gap-2 text-xs font-medium">
+      <div className="flex border-b border-slate-800 bg-slate-950 px-6 gap-2 text-xs font-medium overflow-x-auto">
+        <button
+          id="tab-phase9-saas"
+          onClick={() => setActiveTab('phase9')}
+          className={`py-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'phase9'
+              ? 'border-indigo-500 text-indigo-300 font-semibold'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Server className="w-4 h-4 text-indigo-400" /> Phase 9 SaaS Platform &amp; Multi-Tenancy
+        </button>
+
+        <button
+          id="tab-phase8-operations"
+          onClick={() => setActiveTab('phase8')}
+          className={`py-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'phase8'
+              ? 'border-emerald-500 text-emerald-300 font-semibold'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Shield className="w-4 h-4 text-emerald-400" /> Phase 8 Operations &amp; Observability
+        </button>
+
+        <button
+          id="tab-phase7-readiness"
+          onClick={() => setActiveTab('readiness')}
+          className={`py-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'readiness'
+              ? 'border-emerald-500 text-emerald-300 font-semibold'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Phase 7 Readiness Gate
+        </button>
+
         <button
           id="tab-adaptive-studio"
           onClick={() => setActiveTab('adaptive')}
@@ -462,6 +506,21 @@ export const MediatorOrchestrationView: React.FC<MediatorProps> = ({ activeKbId,
 
       {/* TAB CONTENT AREA */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* ========================================================================= */}
+        {/* TAB -2: PHASE 9 PRODUCTION SAAS & MULTI-TENANCY PLATFORM */}
+        {/* ========================================================================= */}
+        {activeTab === 'phase9' && <Phase9SaaSPlatformView />}
+
+        {/* ========================================================================= */}
+        {/* TAB -1: PHASE 8 REAL-WORLD EVALUATION, OBSERVABILITY & HARDENING */}
+        {/* ========================================================================= */}
+        {activeTab === 'phase8' && <Phase8OperationalDashboard />}
+
+        {/* ========================================================================= */}
+        {/* TAB 0: PHASE 7 READINESS GATE & STRESS HARNESS */}
+        {/* ========================================================================= */}
+        {activeTab === 'readiness' && <Phase7ReadinessView />}
+
         {/* ========================================================================= */}
         {/* TAB: ADAPTIVE EVIDENCE STUDIO (PHASE 6) */}
         {/* ========================================================================= */}

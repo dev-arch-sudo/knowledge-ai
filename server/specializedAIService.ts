@@ -44,6 +44,7 @@ export interface SpecializedAIAnswerResult {
   memoryCount: number;
   experienceRecorded: boolean;
   experienceId?: string;
+  retrievalDebug?: any;
 }
 
 // In-memory conversation-to-account/ai mapping for tenant isolation validation
@@ -164,7 +165,10 @@ export class SpecializedAIService {
       activeDocs,
       chatHistory,
       ai,
-      retrievedMemory.memoryContextString
+      retrievedMemory.memoryContextString,
+      effectiveAccountId,
+      kb.id,
+      requestId
     );
 
     // 8. Refusal & Grounding Semantics
@@ -251,6 +255,7 @@ export class SpecializedAIService {
       memoryCount: memoryUsed ? retrievedMemory.memories.length : 0,
       experienceRecorded: Boolean(recordedExpId),
       experienceId: recordedExpId,
+      retrievalDebug: groundedResult.diagnosticTrace,
     };
   }
 }

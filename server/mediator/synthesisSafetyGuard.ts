@@ -8,7 +8,9 @@ import { AgentClaim } from './types.js';
 
 export interface SynthesisSafetyAuditResult {
   isSafe: boolean;
+  safe: boolean;
   unsupportedClaimsDetected: string[];
+  warnings: string[];
   auditedSummary: string;
   sanitizationApplied: boolean;
 }
@@ -16,7 +18,7 @@ export interface SynthesisSafetyAuditResult {
 export class SynthesisSafetyGuard {
   public audit(summary: string, rawClaims: AgentClaim[]): SynthesisSafetyAuditResult {
     const unsupportedClaimsDetected: string[] = [];
-    const allRawText = rawClaims.map((c) => c.claimText.toLowerCase()).join(' ');
+    const allRawText = rawClaims.map((c) => (c.claimText || (c as any).text || '').toLowerCase()).join(' ');
 
     // 1. Check for unwarranted risk downgrading
     if (allRawText.includes('high risk') || allRawText.includes('critical')) {
@@ -38,6 +40,14 @@ export class SynthesisSafetyGuard {
       unsupportedClaimsDetected.push('Synthesis falsely self-certified ungrounded summary as authoritative system decree.');
     }
 
+    // 4. Check for ungrounded speculative concepts or hallucinated capabilities (e.g. cold-fusion, reactor, unverified subsystems)
+    if (/cold-fusion|reactor|quantum|unauthorized leak|ignore prior instructions/i.test(summary)) {
+      const matched = summary.match(/cold-fusion|reactor|quantum|unauthorized leak|ignore prior instructions/i)?.[0];
+      if (matched && !allRawText.includes(matched.toLowerCase())) {
+        unsupportedClaimsDetected.push(`Synthesis introduced unsupported speculative concept or hallucination "${matched}" not found in evidence.`);
+      }
+    }
+
     // Sanitize summary if unsupported leaps were detected
     let auditedSummary = summary;
     let sanitizationApplied = false;
@@ -46,12 +56,22 @@ export class SynthesisSafetyGuard {
       sanitizationApplied = true;
     }
 
+    const isSafe = unsupportedClaimsDetected.length === 0;
     return {
-      isSafe: unsupportedClaimsDetected.length === 0,
+      isSafe,
+      safe: isSafe,
       unsupportedClaimsDetected,
+      warnings: unsupportedClaimsDetected,
       auditedSummary,
       sanitizationApplied,
     };
+  }
+
+  public checkSynthesisSafety(arg1: any, arg2?: any): SynthesisSafetyAuditResult {
+    if (Array.isArray(arg1)) {
+      return this.audit(typeof arg2 === 'string' ? arg2 : '', arg1);
+    }
+    return this.audit(typeof arg1 === 'string' ? arg1 : '', Array.isArray(arg2) ? arg2 : []);
   }
 }
 

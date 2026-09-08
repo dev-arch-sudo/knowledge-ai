@@ -142,3 +142,41 @@ export async function generateSampleDocs(): Promise<{ filename: string; buffer: 
     }
   ];
 }
+
+export async function generateAuroraRoboticsPdf(): Promise<{ filename: string; buffer: Buffer }> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  const p1 = doc.addPage([612, 792]);
+  p1.drawText('Aurora Robotics Fleet & Operations Overview', { x: 50, y: 730, size: 20, font: boldFont, color: rgb(0.1, 0.2, 0.4) });
+  p1.drawLine({ start: { x: 50, y: 715 }, end: { x: 562, y: 715 }, thickness: 1, color: rgb(0.8, 0.8, 0.8) });
+
+  p1.drawText('Section 1: Active Fleet Telemetry', { x: 50, y: 685, size: 14, font: boldFont });
+  const lines1 = [
+    'Aurora Robotics currently operates 300 active robots across customer fulfillment centers and automotive assembly lines.',
+    'All units in the active fleet report real-time telemetry back to the centralized cloud orchestration platform.',
+    '',
+    'Section 2: Autonomous Mobile Robot Model Specifications',
+    'The AR-40 is an autonomous mobile robot engineered for medium-duty intra-facility transport.',
+    'The maximum payload capacity of the AR-40 is 40 kilograms.',
+    'The AR-40 is powered by a high-density lithium-iron-phosphate battery providing 8 continuous operating hours.',
+    '',
+    'Section 3: Infrastructure Expansion and Facility Roadmap',
+    'In 2027, Aurora Robotics plans to open two new distribution warehouses to support expanding regional operations.',
+    'However, the specific names and geographical locations of these two warehouses have not yet been announced.',
+    'Site selection assessments and environmental impact studies are currently pending completion.'
+  ];
+  let y = 660;
+  for (const line of lines1) {
+    p1.drawText(line, { x: 50, y, size: 11, font, color: rgb(0.15, 0.15, 0.15) });
+    y -= 18;
+  }
+
+  const pdfBytes = await doc.save();
+  return {
+    filename: 'Aurora Robotics Fleet & Operations Overview.pdf',
+    buffer: Buffer.from(pdfBytes)
+  };
+}
+

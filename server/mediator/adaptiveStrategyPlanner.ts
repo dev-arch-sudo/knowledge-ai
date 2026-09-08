@@ -76,17 +76,18 @@ export class AdaptiveStrategyPlanner {
     if (strategy === 'SINGLE_AGENT') {
       assignAgent('Primary Analyst', 'General Task Execution', 'general', 'agent');
     } else {
-      // Allocate diverse specialists based on detected domains
-      if (/security|threat|auth/i.test(taskPrompt) || risk.securityRisk > 0.4) {
+      // Allocate diverse specialists based on detected domains and task context
+      const searchContext = `${taskPrompt} ${(complexity.rationale || []).join(' ')}`;
+      if (/security|threat|auth/i.test(searchContext) || risk.securityRisk > 0.4) {
         assignAgent('Security Specialist', 'Vulnerability & Policy Audit', 'security', 'agent-sec');
       }
-      if (/database|sql|storage/i.test(taskPrompt)) {
+      if (/database|sql|storage/i.test(searchContext)) {
         assignAgent('Database Architect', 'Data Integrity & Query Analysis', 'database', 'agent-db');
       }
-      if (/scaling|throughput|concurrency|latency/i.test(taskPrompt)) {
+      if (/scaling|throughput|concurrency|latency/i.test(searchContext)) {
         assignAgent('Scalability Specialist', 'Distributed Systems & Concurrency', 'scalability', 'agent-scale');
       }
-      if (/telemetry|psi|turbine|temperature/i.test(taskPrompt)) {
+      if (/telemetry|psi|turbine|temperature/i.test(searchContext)) {
         assignAgent('Telemetry Diagnostics Specialist', 'Telemetry & Sensor Physics', 'telemetry', 'agent-telemetry');
       }
 

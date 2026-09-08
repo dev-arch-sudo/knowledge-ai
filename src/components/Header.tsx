@@ -225,9 +225,9 @@ export const Header: React.FC<HeaderProps> = ({
           }`}
         >
           <Network className="w-3.5 h-3.5 text-indigo-600" />
-          <span>Multi-Agent Mediator &amp; Reliability</span>
+          <span>Multi-Agent Mediator &amp; SaaS</span>
           <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.2 rounded-full font-mono">
-            Phase 5
+            Phase 9
           </span>
         </button>
       </div>

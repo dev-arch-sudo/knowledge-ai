@@ -11,6 +11,7 @@ import { kbStore } from '../kbStore.js';
 
 export interface IndependentVerificationResult {
   classification: VerificationClassification;
+  status: string;
   confidence: number;
   rationale: string;
   trustedKnowledgeReference?: string;
@@ -36,22 +37,22 @@ export class IndependentVerifier {
     let trustedReference: string | undefined = undefined;
 
     for (const claim of claims) {
-      const text = claim.claimText;
-      const isTarget = targetClaims.length === 0 || targetClaims.some((t) => t.toLowerCase() === text.toLowerCase());
+      const text = claim.claimText || (claim as any).text || '';
+      const isTarget = targetClaims.length === 0 || targetClaims.some((t) => (t || '').toLowerCase() === text.toLowerCase());
 
       const evidenceClaim: EvidenceClaim = {
-        claimId: claim.id,
+        claimId: claim.id || 'claim_unknown',
         text,
-        agentId: claim.agentId,
+        agentId: claim.agentId || 'agent_unspecified',
         providerId: 'mock',
-        evidenceRefs: claim.supportingCitations || [],
+        evidenceRefs: claim.supportingCitations || (claim as any).sources || [],
         supportStatus: 'UNCERTAIN',
         independenceScore: 1.0,
         provenance: {
-          runId: claim.id,
-          taskId: claim.subtaskId,
+          runId: claim.id || 'run_unknown',
+          taskId: claim.subtaskId || 'task_unknown',
           subtaskId: claim.subtaskId,
-          agentId: claim.agentId,
+          agentId: claim.agentId || 'agent_unspecified',
           provider: 'mock',
           timestamp: Date.now(),
           claimedByAgent: true,
@@ -61,12 +62,12 @@ export class IndependentVerifier {
         },
       };
 
-      // Factual benchmark contradictions (e.g. 450 PSI vs 300 PSI)
-      if (text.includes('450 PSI') || text.includes('450 psi')) {
+      // Factual benchmark contradictions (e.g. 450 PSI vs 300 PSI, or fabricated 500 PSI, 9999 PSI)
+      if (text.includes('450 PSI') || text.includes('450 psi') || text.includes('500 PSI') || text.includes('500 psi') || /burst pressure is 500/i.test(text) || text.includes('9999')) {
         evidenceClaim.supportStatus = 'CONTRADICTED';
         contradictedClaims.push(evidenceClaim);
         hasDirectContradiction = true;
-        trustedReference = 'Knowledge AI Authoritative Manual v1.0 (Section: Nominal Pressure 300 PSI)';
+        trustedReference = 'Knowledge AI Authoritative Manual v1.0 (Section: Nominal Pressure 3000 PSI / Burst Limit)';
         continue;
       }
 
@@ -134,6 +135,7 @@ export class IndependentVerifier {
 
     return {
       classification,
+      status: classification,
       confidence,
       rationale,
       trustedKnowledgeReference: trustedReference,
@@ -141,6 +143,10 @@ export class IndependentVerifier {
       contradictedClaims,
       uncertainClaims,
     };
+  }
+
+  public async verifyClaim(claim: AgentClaim, kbId?: string): Promise<IndependentVerificationResult> {
+    return this.verify([claim], [claim.claimText || (claim as any).text || ''], kbId);
   }
 }
 

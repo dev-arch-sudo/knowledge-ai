@@ -470,7 +470,7 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden">
         {/* Tab 1: Grounded Playground (Chat + Document Quickbar) */}
         {currentTab === 'playground' && (
-          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden w-full h-full">
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full min-h-0">
             <DocumentSidebar
               documents={activeKb?.documents || []}
               onUploadFiles={handleUploadFiles}

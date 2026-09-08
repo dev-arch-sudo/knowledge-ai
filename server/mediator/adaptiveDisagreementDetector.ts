@@ -158,14 +158,17 @@ export class AdaptiveDisagreementDetector {
   }
 
   private areClaimsSyntacticallySimilar(a: string, b: string): boolean {
-    const wordsA = new Set(a.toLowerCase().split(/\s+/));
-    const wordsB = new Set(b.toLowerCase().split(/\s+/));
+    const sA = (a || '').trim().toLowerCase();
+    const sB = (b || '').trim().toLowerCase();
+    if (sA === sB) return true;
+    const wordsA = new Set(sA.split(/\s+/).filter(Boolean));
+    const wordsB = new Set(sB.split(/\s+/).filter(Boolean));
     let common = 0;
     for (const w of wordsA) {
-      if (wordsB.has(w) && w.length > 3) common++;
+      if (wordsB.has(w)) common++;
     }
-    const ratio = common / Math.max(wordsA.size, wordsB.size, 1);
-    return ratio >= 0.65;
+    const union = new Set([...wordsA, ...wordsB]).size;
+    return union > 0 ? common / union >= 0.5 : false;
   }
 }
 

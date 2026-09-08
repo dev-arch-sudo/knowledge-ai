@@ -58,7 +58,7 @@ export class TaskComplexityAnalyzer {
     }
 
     // 4. Contradiction & Conflict Risk
-    const conflictMatchers = /\b(contradict|conflict|opposing|disagree|competing|versus|incompatible|discrepancy|450 psi vs 300 psi)\b/gi;
+    const conflictMatchers = /\b(contradict\w*|conflict\w*|opposing|disagree\w*|competing|versus|incompatible|discrepanc\w*|450 psi vs 300 psi|between.*psi)\b/gi;
     const conflictMatches = text.match(conflictMatchers) || [];
     const contradictionRisk = Math.min(1.0, Math.round((conflictMatches.length * 0.35) * 100) / 100);
     if (contradictionRisk > 0) {
@@ -83,8 +83,8 @@ export class TaskComplexityAnalyzer {
     // 7. Reasoning Depth Estimate (1 to 5)
     let depth = 1;
     if (domainCount >= 3 || dependencyCount >= 2) depth = 3;
-    if (domainCount >= 4 && dependencyCount >= 2) depth = 4;
-    if (adversarialRisk > 0.5 || contradictionRisk > 0.5) depth = Math.max(depth, 4);
+    if (domainCount >= 4 || (domainCount >= 3 && dependencyCount >= 1)) depth = 4;
+    if (adversarialRisk > 0.5 || contradictionRisk > 0.3) depth = Math.max(depth, 4);
     if (depth > 5) depth = 5;
     const reasoningDepthEstimate = depth;
 
@@ -98,11 +98,11 @@ export class TaskComplexityAnalyzer {
 
     // 9. Composite Complexity Score (0.0 to 1.0)
     const rawScore =
-      (domainCount / 5) * 0.35 +
-      (dependencyCount / 4) * 0.25 +
+      (Math.min(domainCount, 4) / 4) * 0.45 +
+      (Math.min(dependencyCount, 3) / 3) * 0.15 +
       (reasoningDepthEstimate / 5) * 0.2 +
-      ambiguityScore * 0.1 +
-      contradictionRisk * 0.1;
+      ambiguityScore * 0.08 +
+      contradictionRisk * 0.12;
     const complexityScore = Math.min(1.0, Math.max(0.1, Math.round(rawScore * 100) / 100));
 
     // 10. Verification Requirement

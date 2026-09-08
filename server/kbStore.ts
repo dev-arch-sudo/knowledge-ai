@@ -218,7 +218,7 @@ class KnowledgeBaseStore {
     return null;
   }
 
-  listKBs(): {
+  listKBs(accountId?: string): {
     id: string;
     name: string;
     description?: string;
@@ -229,7 +229,11 @@ class KnowledgeBaseStore {
     updatedAt: number;
     accountId?: string;
   }[] {
-    return Array.from(this.kbs.values()).map((kb) => ({
+    const list = accountId
+      ? Array.from(this.kbs.values()).filter((kb) => kb.accountId === accountId)
+      : Array.from(this.kbs.values());
+
+    return list.map((kb) => ({
       id: kb.id,
       name: kb.name,
       description: kb.description,
@@ -240,6 +244,10 @@ class KnowledgeBaseStore {
       updatedAt: kb.updatedAt || kb.createdDate,
       accountId: kb.accountId || 'acc_default',
     }));
+  }
+
+  getAll(): KnowledgeBase[] {
+    return Array.from(this.kbs.values());
   }
 
   createKB(name: string, description?: string, accountId: string = 'acc_default'): KnowledgeBase {

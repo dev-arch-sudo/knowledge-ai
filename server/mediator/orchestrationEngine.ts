@@ -13,6 +13,7 @@ import {
   ContradictionRecord,
   VerificationClassification,
   PartialFailurePolicy,
+  ExecutionMode,
 } from './types.js';
 import { mockProviderAdapter, MockAgentExecutionInput } from './mockProviderAdapter.js';
 import { agentRegistry } from './agentRegistry.js';
@@ -22,6 +23,7 @@ import { memoryStore } from '../memoryStore.js';
 export interface ExecuteTaskParams {
   taskPrompt: string;
   parentTaskId?: string;
+  executionMode?: ExecutionMode;
   subtaskPrompts?: Array<{
     title: string;
     description: string;
@@ -125,7 +127,7 @@ export class OrchestrationEngine {
     const createdAt = Date.now();
 
     const mergedConfig: OrchestrationRunConfig = {
-      executionMode: params.config?.executionMode || 'PARALLEL',
+      executionMode: params.executionMode || params.config?.executionMode || 'PARALLEL',
       partialFailurePolicy: params.config?.partialFailurePolicy || 'CONTINUE_WITH_PARTIAL_RESULTS',
       maxConcurrentSubtasks: params.config?.maxConcurrentSubtasks || 4,
       maxDelegationDepth: params.config?.maxDelegationDepth || 3,

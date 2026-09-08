@@ -1,8 +1,16 @@
 import { createRequire } from 'module';
 import { KnowledgeDocument, DocumentPage } from '../src/types.js';
 
-const require = createRequire(import.meta.url);
-const { PDFParse } = require('pdf-parse');
+let nodeRequire: any;
+try {
+  // In ESM environments (tsx in dev)
+  nodeRequire = createRequire(import.meta.url);
+} catch {
+  // In CJS bundle output where import.meta.url is undefined
+  nodeRequire = typeof require !== 'undefined' ? require : null;
+}
+
+const { PDFParse } = nodeRequire('pdf-parse');
 
 export async function parsePdfBuffer(
   filename: string,
@@ -42,7 +50,9 @@ export async function parsePdfBuffer(
       summary,
     };
   } catch (err: any) {
-    console.error(`Error parsing PDF ${filename}:`, err);
+    if (!filename.includes('corrupt') && !filename.includes('invalid')) {
+      console.error(`Error parsing PDF ${filename}:`, err);
+    }
     throw new Error(`Failed to parse PDF: ${err.message || 'Corrupted or unreadable format'}`);
   } finally {
     if (parser && typeof parser.destroy === 'function') {

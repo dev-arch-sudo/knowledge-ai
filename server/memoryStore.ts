@@ -422,6 +422,14 @@ export class MemoryStore {
     }).sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
+  public getAll(): Memory[] {
+    return Array.from(this.memories.values());
+  }
+
+  public list(): Memory[] {
+    return Array.from(this.memories.values());
+  }
+
   public getMemory(id: string, accountId: string): Memory | null {
     const m = this.memories.get(id);
     if (!m || m.accountId !== accountId) return null;

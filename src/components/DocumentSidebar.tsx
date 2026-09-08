@@ -98,7 +98,7 @@ export const DocumentSidebar: React.FC<DocumentSidebarProps> = ({
   return (
     <aside
       id="document-sidebar"
-      className="w-full lg:w-84 xl:w-92 bg-slate-50 border-r border-slate-200 flex flex-col h-full shrink-0"
+      className="w-full md:w-72 lg:w-84 xl:w-92 bg-slate-50 border-r border-slate-200 flex flex-col h-auto md:h-full max-h-[40vh] md:max-h-full shrink-0"
     >
       {/* Sidebar Header */}
       <div className="p-4 border-b border-slate-200 bg-white">

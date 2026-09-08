@@ -24,6 +24,26 @@ import { runMediatorPhase3Tests } from './server/mediator/mediatorPhase3Runner.j
 import { runMediatorPhase4Tests } from './server/mediator/mediatorPhase4Runner.js';
 import { runMediatorPhase5Tests } from './server/mediator/mediatorPhase5Runner.js';
 import { runMediatorPhase6Tests } from './server/mediator/mediatorPhase6Runner.js';
+import { runMediatorPhase7Tests } from './server/mediator/mediatorPhase7Runner.js';
+import { runMediatorPhase8Tests } from './server/mediator/mediatorPhase8Runner.js';
+import { runMediatorPhase9Tests } from './server/mediator/mediatorPhase9Runner.js';
+import { executeComprehensiveAudit } from './server/fullAuditRunner.js';
+import { runRag50GoldenBenchmark } from './server/ragBenchmarkRunner.js';
+import { runEightTurnConversationalSequence } from './server/ragConversationalTester.js';
+import { ragTelemetryStore } from './server/ragTelemetryStore.js';
+import { multiTenancyService } from './server/mediator/multiTenancyService.js';
+import { apiManagementService } from './server/mediator/apiManagementService.js';
+import { quotaAndBillingService } from './server/mediator/quotaAndBillingService.js';
+import { tenantGovernanceService } from './server/mediator/tenantGovernanceService.js';
+import { webhookService } from './server/mediator/webhookService.js';
+import { saasReadinessService } from './server/mediator/saasReadinessService.js';
+import { realProviderAdapter } from './server/mediator/realProviderAdapter.js';
+import { goldenDatasetService } from './server/mediator/goldenDatasetService.js';
+import { telemetryService } from './server/mediator/telemetryAndObservability.js';
+import { operationalHardeningService } from './server/mediator/operationalHardeningService.js';
+import { systemReadinessService } from './server/mediator/systemReadinessService.js';
+import { integratedStressHarness } from './server/mediator/integratedStressHarness.js';
+import { getProductionLimitations } from './server/mediator/limitationsRegister.js';
 import { adaptiveOrchestrator } from './server/mediator/adaptiveOrchestrator.js';
 import { adaptiveBenchmarkEngine } from './server/mediator/adaptiveBenchmarkEngine.js';
 import { taskComplexityAnalyzer } from './server/mediator/taskComplexityAnalyzer.js';
@@ -947,6 +967,631 @@ app.post('/api/v1/mediator/tests/phase6', async (req, res) => {
   } catch (err: any) {
     console.error('Mediator Phase 6 tests error:', err);
     res.status(500).json({ error: err.message || 'Failed to run Mediator Phase 6 tests' });
+  }
+});
+
+// =========================================================================
+// PHASE 7: SYSTEM INTEGRATION, STRESS TESTING & PRODUCTION READINESS
+// =========================================================================
+
+// Run Phase 7 Comprehensive 70-test Acceptance Battery
+app.post(['/api/v1/tests/phase7', '/api/v1/tests/mediator-phase7'], async (req, res) => {
+  try {
+    const results = await runMediatorPhase7Tests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Phase 7 acceptance tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Phase 7 acceptance tests' });
+  }
+});
+
+// System Health Endpoint: GET /api/v1/system/health
+app.get('/api/v1/system/health', (req, res) => {
+  try {
+    const health = systemReadinessService.getSystemHealth();
+    res.json(health);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// System Readiness Gate Summary: GET /api/v1/system/readiness
+app.get('/api/v1/system/readiness', async (req, res) => {
+  try {
+    const report = await systemReadinessService.generateProductionReadinessReport(false);
+    res.json({
+      status: report.overallStatus,
+      criticalFailures: report.criticalFailures.length,
+      warnings: report.warnings.length,
+      summary: report.summary,
+      timestamp: report.timestamp,
+      buildVersion: report.buildVersion,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Full Production Readiness Report: GET /api/v1/system/readiness-report
+app.get('/api/v1/system/readiness-report', async (req, res) => {
+  try {
+    const forceFresh = req.query.fresh === 'true';
+    const report = await systemReadinessService.generateProductionReadinessReport(forceFresh);
+    res.json(report);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Known Limitations Register: GET /api/v1/system/limitations
+app.get('/api/v1/system/limitations', (req, res) => {
+  try {
+    const limitations = getProductionLimitations();
+    res.json({ limitations });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Concurrency Stress Run: POST /api/v1/stress/concurrency
+app.post('/api/v1/stress/concurrency', async (req, res) => {
+  try {
+    const { concurrencyLevel } = req.body || {};
+    const level = concurrencyLevel ? parseInt(concurrencyLevel, 10) : 10;
+    const result = await integratedStressHarness.runConcurrencyStress(level);
+    res.json({ result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Task & Tenant Isolation Audit: POST /api/v1/stress/isolation
+app.post('/api/v1/stress/isolation', async (req, res) => {
+  try {
+    const result = await integratedStressHarness.auditTaskAndTenantIsolation();
+    res.json({ result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// State Machine Transition Audit: POST /api/v1/stress/state-machine
+app.post('/api/v1/stress/state-machine', (req, res) => {
+  try {
+    const result = integratedStressHarness.auditStateMachineTransitions();
+    res.json({ result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =========================================================================
+// PHASE 8: REAL-WORLD EVALUATION, OBSERVABILITY & OPERATIONAL HARDENING
+// =========================================================================
+
+// Run Phase 8 Comprehensive 80-test Acceptance Battery
+app.post(['/api/v1/tests/phase8', '/api/v1/tests/mediator-phase8'], async (req, res) => {
+  try {
+    const results = await runMediatorPhase8Tests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Phase 8 acceptance tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Phase 8 acceptance tests' });
+  }
+});
+
+// Operational Readiness Dashboard Report: GET /api/v1/operations/readiness-dashboard
+app.get('/api/v1/operations/readiness-dashboard', (req, res) => {
+  try {
+    const report = operationalHardeningService.getOperationalReadinessReport();
+    res.json(report);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Observability SLIs & SLOs: GET /api/v1/observability/slos
+app.get('/api/v1/observability/slos', (req, res) => {
+  try {
+    const report = telemetryService.getSloReport();
+    res.json(report);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Observability SLO Configuration: POST /api/v1/observability/slos/config
+app.post('/api/v1/observability/slos/config', (req, res) => {
+  try {
+    const updated = telemetryService.updateSloConfig(req.body || {});
+    res.json({ updated, sloReport: telemetryService.getSloReport() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Observability Traces: GET /api/v1/observability/traces
+app.get('/api/v1/observability/traces', (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const traces = telemetryService.listTraceSpans(limit);
+    res.json({ traces });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Observability Alerts: GET /api/v1/observability/alerts
+app.get('/api/v1/observability/alerts', (req, res) => {
+  try {
+    const includeResolved = req.query.all === 'true';
+    const alerts = telemetryService.listAlerts(includeResolved);
+    res.json({ alerts });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Resolve Alert: POST /api/v1/observability/alerts/:id/resolve
+app.post('/api/v1/observability/alerts/:id/resolve', (req, res) => {
+  try {
+    const resolved = telemetryService.resolveAlert(req.params.id);
+    res.json({ resolved, id: req.params.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Golden Evaluation Datasets: GET /api/v1/eval/golden-datasets
+app.get('/api/v1/eval/golden-datasets', (req, res) => {
+  try {
+    const datasets = goldenDatasetService.listDatasets();
+    res.json({ datasets });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Execute Evaluation Run: POST /api/v1/eval/run
+app.post('/api/v1/eval/run', async (req, res) => {
+  try {
+    const run = await goldenDatasetService.executeEvaluationRun(req.body || {});
+    res.json({ run });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List Evaluation Runs: GET /api/v1/eval/runs
+app.get('/api/v1/eval/runs', (req, res) => {
+  try {
+    const runs = goldenDatasetService.listEvaluationRuns();
+    res.json({ runs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Human Evaluation: Record POST /api/v1/eval/human
+app.post('/api/v1/eval/human', (req, res) => {
+  try {
+    const record = goldenDatasetService.recordHumanEvaluation(req.body);
+    res.json({ record });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Human Evaluation: List & Agreement GET /api/v1/eval/human
+app.get('/api/v1/eval/human', (req, res) => {
+  try {
+    const taskId = req.query.taskId as string | undefined;
+    const records = goldenDatasetService.listHumanEvaluations(taskId);
+    let agreement = null;
+    if (taskId) {
+      agreement = goldenDatasetService.calculateInterRaterAgreement(taskId);
+    }
+    res.json({ records, agreement });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Incidents: GET /api/v1/operations/incidents
+app.get('/api/v1/operations/incidents', (req, res) => {
+  try {
+    const incidents = operationalHardeningService.listIncidents();
+    res.json({ incidents });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Incident Create: POST /api/v1/operations/incidents
+app.post('/api/v1/operations/incidents', (req, res) => {
+  try {
+    const incident = operationalHardeningService.createIncident(req.body);
+    res.status(201).json({ incident });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Incident Transition: PATCH /api/v1/operations/incidents/:id/state
+app.patch('/api/v1/operations/incidents/:id/state', (req, res) => {
+  try {
+    const { state, note } = req.body || {};
+    const incident = operationalHardeningService.transitionIncidentState(
+      req.params.id,
+      state,
+      note || 'Transitioned by operator'
+    );
+    res.json({ incident });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Feature Flags: GET /api/v1/operations/feature-flags
+app.get('/api/v1/operations/feature-flags', (req, res) => {
+  try {
+    const flags = operationalHardeningService.listFeatureFlags();
+    res.json({ flags });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Feature Flag Toggle: PATCH /api/v1/operations/feature-flags/:name
+app.patch('/api/v1/operations/feature-flags/:name', (req, res) => {
+  try {
+    const { value, operatorRole } = req.body || {};
+    const flag = operationalHardeningService.setFeatureFlag(
+      req.params.name,
+      value,
+      operatorRole || 'OPERATOR'
+    );
+    res.json({ flag });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Configuration Drift: GET /api/v1/operations/config-drift
+app.get('/api/v1/operations/config-drift', (req, res) => {
+  try {
+    const drift = operationalHardeningService.detectConfigurationDrift();
+    const snapshots = operationalHardeningService.getSnapshots();
+    res.json({ drift, snapshots });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Isolated Backup/Restore Test: POST /api/v1/operations/backup-restore-test
+app.post('/api/v1/operations/backup-restore-test', async (req, res) => {
+  try {
+    const result = await operationalHardeningService.executeBackupRestoreTest();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Scaling Audit: GET /api/v1/operations/scaling-audit
+app.get('/api/v1/operations/scaling-audit', (req, res) => {
+  try {
+    const audit = operationalHardeningService.getComponentScalingAudit();
+    res.json({ audit });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Canary Config: GET /api/v1/operations/canary
+app.get('/api/v1/operations/canary', (req, res) => {
+  try {
+    const canary = operationalHardeningService.getCanaryConfig();
+    res.json({ canary });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Canary Update: POST /api/v1/operations/canary
+app.post('/api/v1/operations/canary', (req, res) => {
+  try {
+    const updated = operationalHardeningService.updateCanaryConfig(req.body);
+    res.json({ canary: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations Canary Rollback: POST /api/v1/operations/canary/rollback
+app.post('/api/v1/operations/canary/rollback', (req, res) => {
+  try {
+    const { reason } = req.body || {};
+    const rolledBack = operationalHardeningService.triggerCanaryRollback(reason || 'Operator triggered rollback');
+    res.json({ canary: rolledBack });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Provider Health Profiles: GET /api/v1/providers/health
+app.get('/api/v1/providers/health', (req, res) => {
+  try {
+    const profiles = realProviderAdapter.getHealthProfiles();
+    res.json({ profiles });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =========================================================================
+// PHASE 9: MULTI-TENANCY, API GATEWAY, USAGE METERING & SAAS READINESS
+// =========================================================================
+
+// Run Phase 9 Comprehensive 103-test Battery
+app.post(['/api/v1/tests/phase9', '/api/v1/tests/mediator-phase9'], async (req, res) => {
+  try {
+    const results = await runMediatorPhase9Tests();
+    res.json({
+      results,
+      timestamp: Date.now(),
+    });
+  } catch (err: any) {
+    console.error('Phase 9 tests error:', err);
+    res.status(500).json({ error: err.message || 'Failed to run Phase 9 test suite' });
+  }
+});
+
+// Overall SaaS Platform Readiness: GET /api/v1/saas/status
+app.get('/api/v1/saas/status', (req, res) => {
+  try {
+    const status = saasReadinessService.getOverallSaaSReadiness();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Comprehensive Production-Readiness & Security Audit Battery
+app.post('/api/v1/audit/comprehensive', async (req, res) => {
+  try {
+    const report = await executeComprehensiveAudit();
+    res.json(report);
+  } catch (err: any) {
+    console.error('Comprehensive audit execution error:', err);
+    res.status(500).json({ error: err.message || 'Audit execution failed' });
+  }
+});
+
+// Tenants List: GET /api/v1/tenants
+app.get('/api/v1/tenants', (req, res) => {
+  try {
+    const tenants = multiTenancyService.listTenants();
+    res.json({ tenants });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tenant Details: GET /api/v1/tenants/:tenantId
+app.get('/api/v1/tenants/:tenantId', (req, res) => {
+  try {
+    const tenant = multiTenancyService.getTenant(req.params.tenantId);
+    if (!tenant) {
+      return res.status(404).json({ error: 'Tenant not found' });
+    }
+    const quota = quotaAndBillingService.getTenantQuota(req.params.tenantId);
+    const billing = quotaAndBillingService.getBillingAccount(req.params.tenantId);
+    res.json({ tenant, quota, billing });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Provision Tenant: POST /api/v1/tenants
+app.post('/api/v1/tenants', (req, res) => {
+  try {
+    const { name, tier, ownerUserId, contactEmail, region, allowedDomains } = req.body || {};
+    if (!name || !tier || !ownerUserId || !contactEmail) {
+      return res.status(400).json({ error: 'Missing required tenant fields: name, tier, ownerUserId, contactEmail' });
+    }
+    const tenant = multiTenancyService.provisionTenant({
+      name,
+      tier,
+      ownerUserId,
+      contactEmail,
+      region,
+      allowedDomains,
+    });
+    res.status(201).json({ tenant });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// SaaS Customer Self-Service Onboarding: POST /api/v1/tenants/onboard
+app.post('/api/v1/tenants/onboard', (req, res) => {
+  try {
+    const result = saasReadinessService.onboardCustomer(req.body);
+    res.status(201).json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tenant API Keys: GET /api/v1/tenants/:tenantId/api-keys
+app.get('/api/v1/tenants/:tenantId/api-keys', (req, res) => {
+  try {
+    const keys = apiManagementService.listApiKeys(req.params.tenantId);
+    res.json({ keys });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create Tenant API Key: POST /api/v1/tenants/:tenantId/api-keys
+app.post('/api/v1/tenants/:tenantId/api-keys', (req, res) => {
+  try {
+    const { name, scopes, rateLimitPerMinute, monthlyQuota } = req.body || {};
+    const key = apiManagementService.generateApiKey(req.params.tenantId, {
+      name: name || 'API Key',
+      scopes: scopes || ['ai.execute', 'ai.read'],
+      rateLimitPerMinute,
+      monthlyQuota,
+    });
+    res.status(201).json({ key });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Revoke Tenant API Key: DELETE /api/v1/tenants/:tenantId/api-keys/:keyId
+app.delete('/api/v1/tenants/:tenantId/api-keys/:keyId', (req, res) => {
+  try {
+    const { reason } = req.body || {};
+    const revoked = apiManagementService.revokeApiKey(req.params.keyId, req.params.tenantId, reason);
+    if (!revoked) {
+      return res.status(404).json({ error: 'API key not found or already revoked' });
+    }
+    res.json({ message: 'API key successfully revoked', keyId: req.params.keyId });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tenant Billing Account: GET /api/v1/tenants/:tenantId/billing
+app.get('/api/v1/tenants/:tenantId/billing', (req, res) => {
+  try {
+    const billing = quotaAndBillingService.getBillingAccount(req.params.tenantId);
+    if (!billing) {
+      return res.status(404).json({ error: 'Billing account not found' });
+    }
+    res.json({ billing });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tenant Invoices: GET /api/v1/tenants/:tenantId/invoices
+app.get('/api/v1/tenants/:tenantId/invoices', (req, res) => {
+  try {
+    const invoices = quotaAndBillingService.listInvoices(req.params.tenantId);
+    res.json({ invoices });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate Tenant Invoice: POST /api/v1/tenants/:tenantId/invoices/generate
+app.post('/api/v1/tenants/:tenantId/invoices/generate', (req, res) => {
+  try {
+    const invoice = quotaAndBillingService.generateInvoice(req.params.tenantId);
+    res.status(201).json({ invoice });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tenant Quotas: GET /api/v1/tenants/:tenantId/quotas
+app.get('/api/v1/tenants/:tenantId/quotas', (req, res) => {
+  try {
+    const quota = quotaAndBillingService.getTenantQuota(req.params.tenantId);
+    if (!quota) {
+      return res.status(404).json({ error: 'Quota not found' });
+    }
+    res.json({ quota });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tenant Audit Logs: GET /api/v1/tenants/:tenantId/audit-logs
+app.get('/api/v1/tenants/:tenantId/audit-logs', (req, res) => {
+  try {
+    const logs = tenantGovernanceService.getAuditLogs({ tenantId: req.params.tenantId });
+    res.json({ logs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tenant Compliance Export: GET /api/v1/tenants/:tenantId/compliance-export
+app.get('/api/v1/tenants/:tenantId/compliance-export', (req, res) => {
+  try {
+    const record = tenantGovernanceService.exportComplianceRecord(req.params.tenantId);
+    res.json({ record });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tenant Webhooks: GET /api/v1/tenants/:tenantId/webhooks
+app.get('/api/v1/tenants/:tenantId/webhooks', (req, res) => {
+  try {
+    const webhooks = webhookService.listWebhooks(req.params.tenantId);
+    res.json({ webhooks });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Register Webhook: POST /api/v1/tenants/:tenantId/webhooks
+app.post('/api/v1/tenants/:tenantId/webhooks', (req, res) => {
+  try {
+    const { targetUrl, events, secret } = req.body || {};
+    if (!targetUrl || !events) {
+      return res.status(400).json({ error: 'targetUrl and events are required' });
+    }
+    const webhook = webhookService.registerWebhook(req.params.tenantId, {
+      targetUrl,
+      events,
+      secret,
+    });
+    res.status(201).json({ webhook });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Webhook Delivery Logs: GET /api/v1/tenants/:tenantId/webhooks/events
+app.get('/api/v1/tenants/:tenantId/webhooks/events', (req, res) => {
+  try {
+    const events = webhookService.getDeliveryEvents(req.params.tenantId);
+    res.json({ events });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Simulate Billing Cycle: POST /api/v1/saas/sim-billing-cycle
+app.post('/api/v1/saas/sim-billing-cycle', (req, res) => {
+  try {
+    const { tenantId } = req.body || {};
+    const result = saasReadinessService.simulateBillingCycle(tenantId || 'tenant_alpha');
+    res.json({ result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// OpenAPI Spec: GET /api/v1/api-docs/openapi
+app.get('/api/v1/api-docs/openapi', (req, res) => {
+  try {
+    const spec = apiManagementService.getOpenApiSpec();
+    res.json(spec);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1982,6 +2627,61 @@ app.post('/api/v1/mediator/benchmarks/majority-wrong', async (req, res) => {
     res.json({ result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 9.5 50-Question Golden RAG Acceptance Benchmark
+app.post('/api/v1/rag/benchmark/run', async (req, res) => {
+  try {
+    const benchmarkResults = await runRag50GoldenBenchmark();
+    res.json({ success: true, benchmark: benchmarkResults });
+  } catch (err: any) {
+    console.error('Error running RAG 50 golden benchmark:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/rag/benchmark/status', async (req, res) => {
+  try {
+    const benchmarkResults = await runRag50GoldenBenchmark();
+    res.json({ success: true, benchmark: benchmarkResults });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Phase 9.5 8-Turn Conversational Reproduction & Stale-Context Verification
+app.post('/api/v1/rag/reproduce-sequence', async (req, res) => {
+  try {
+    const mode = req.body?.mode === 'ISOLATED_SINGLE_TURN' ? 'ISOLATED_SINGLE_TURN' : 'CONVERSATIONAL_ACCUMULATION';
+    const sequenceResult = await runEightTurnConversationalSequence(mode);
+    res.json({ success: true, sequence: sequenceResult });
+  } catch (err: any) {
+    console.error('Error running 8-turn conversational sequence:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Phase 9.5 RAG Retrieval Diagnostic Telemetry Traces
+app.get('/api/v1/rag/telemetry', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    const tenantId = req.query.tenantId as string;
+    const traces = ragTelemetryStore.getRecentTraces(limit, tenantId);
+    res.json({ success: true, traces, count: traces.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Phase 9.5 RAG Retrieval Diagnostic Telemetry Summary Statistics
+app.get('/api/v1/rag/telemetry/stats', (req, res) => {
+  try {
+    const tenantId = req.query.tenantId as string;
+    const stats = ragTelemetryStore.getStatistics(tenantId);
+    res.json({ success: true, stats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

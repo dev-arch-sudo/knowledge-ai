@@ -119,6 +119,7 @@ export interface ProvenanceTrace {
   taskId: string;
   subtaskId?: string;
   agentId: string;
+  sourceAgentId?: string;
   provider: string;
   timestamp: number;
   claimedByAgent: boolean;
@@ -155,9 +156,11 @@ export interface AgentClaim {
   subtaskId: string;
   agentId: string;
   claimText: string;
+  text?: string;
   confidence: number;
   supportingCitations: string[];
   systemAsserted: boolean;
+  groundingStatus?: 'UNVERIFIED' | 'GROUNDED' | 'UNSUPPORTED' | 'CONTRADICTED';
   agentClaimedProvenance?: {
     claimedSource: string;
     claimedVerified: boolean;
@@ -172,7 +175,11 @@ export interface DisagreementRecord {
   evidenceFoundInGrounding: boolean;
   consensusRatio: number;
   consensusVote: string;
-  resolutionStatus: 'RESOLVED_BY_EVIDENCE' | 'UNRESOLVED_CONTRADICTION' | 'INSUFFICIENT_EVIDENCE';
+  resolutionStatus:
+    | 'RESOLVED_BY_EVIDENCE'
+    | 'UNRESOLVED_CONTRADICTION'
+    | 'INSUFFICIENT_EVIDENCE'
+    | 'PENDING_VERIFICATION';
   finalGroundedClaim?: string;
 }
 
@@ -267,4 +274,15 @@ export interface BenchmarkMetrics {
     fabricatedCitation: number;
     memoryBoundaryAttempts: number;
   };
+}
+
+export type OrchestrationRunStatus = TaskStatus;
+
+export interface TestResultItem {
+  id: number;
+  name: string;
+  status: 'passed' | 'failed';
+  durationMs: number;
+  details?: string;
+  evidence?: any;
 }

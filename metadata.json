@@ -1,6 +1,6 @@
 {
   "name": "Knowledge AI",
-  "description": "Developer platform and document-grounded Specialized AI service with adaptive evidence-driven multi-agent orchestration, adversarial evaluation, and controlled learning sandbox.",
+  "description": "Enterprise multi-tenant SaaS platform and document-grounded Specialized AI service with adaptive evidence orchestration, API key gateway, quota metering, cryptographic audit governance, and operational hardening.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
