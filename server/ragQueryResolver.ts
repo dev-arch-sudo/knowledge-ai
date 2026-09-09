@@ -46,7 +46,8 @@ function extractRecentContextEntities(history: ChatMessage[]): {
   // Scan recent history in reverse
   const recent = history.slice(-6).reverse();
   for (const msg of recent) {
-    const text = msg.content;
+    const text = msg.content || (msg as any).text || '';
+    if (!text) continue;
     const textUpper = text.toUpperCase();
 
     // Check models
@@ -91,7 +92,10 @@ export function resolveConversationalQuery(
   const qLower = trimmed.toLowerCase();
 
   // Filter valid previous user/assistant turns (excluding current question if already appended)
-  const priorHistory = chatHistory.filter((msg) => msg.content.trim() !== trimmed);
+  const priorHistory = chatHistory.filter((msg) => {
+    const text = (msg.content || (msg as any).text || '').trim();
+    return text.length > 0 && text !== trimmed;
+  });
   const context = extractRecentContextEntities(priorHistory);
 
   // 1. Correction query detection (Section 16: Previous Answer Correction Test)

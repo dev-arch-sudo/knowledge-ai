@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { kbStore } from './server/kbStore.js';
 import { parsePdfBuffer, createKnowledgeDocument } from './server/documentService.js';
+import { generateFullAuroraRoboticsCorpusPdf } from './server/auroraCorpus.js';
 import { generateSampleDocs } from './server/sampleDocs.js';
 import { answerQuestionWithGroundedDocs } from './server/geminiService.js';
 import { runFullTestSuite } from './server/testRunner.js';
@@ -51,6 +52,12 @@ import { riskAssessmentEngine } from './server/mediator/riskAssessmentEngine.js'
 import { adaptiveStrategyPlanner } from './server/mediator/adaptiveStrategyPlanner.js';
 import { adaptiveDisagreementDetector } from './server/mediator/adaptiveDisagreementDetector.js';
 import { independentVerifier } from './server/mediator/independentVerifier.js';
+import { knowledgeCognitiveEngine } from './server/cognitiveEngine/knowledgeCognitiveEngine.js';
+import { runAurora24Benchmark } from './server/cognitiveEngine/benchmarks/auroraBenchmark.js';
+import { runGolden220Benchmark } from './server/cognitiveEngine/benchmarks/golden200Benchmark.js';
+import { cognitiveTelemetryStore } from './server/cognitiveEngine/cognitiveTelemetryStore.js';
+import { knowledgeGraphEngine } from './server/cognitiveEngine/knowledgeGraphEngine.js';
+import { hierarchicalIndex } from './server/cognitiveEngine/hierarchicalIndex.js';
 import { ChatMessage, ApiChatRequest, ApiChatResponse, ApiErrorResponse, MemoryStatus, MemoryType, ExperienceSource } from './src/types.js';
 import crypto from 'crypto';
 
@@ -2680,6 +2687,195 @@ app.get('/api/v1/rag/telemetry/stats', (req, res) => {
     const tenantId = req.query.tenantId as string;
     const stats = ragTelemetryStore.getStatistics(tenantId);
     res.json({ success: true, stats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// --- PHASE 10: COGNITIVE RAG ENGINE API ---
+// ==========================================
+
+// In-memory cache for benchmark runs
+let cachedAuroraBenchmark: any = null;
+let cachedGoldenBenchmark: any = null;
+let defaultCognitiveDoc: any = null;
+
+async function getDefaultCognitiveDoc() {
+  if (defaultCognitiveDoc) return defaultCognitiveDoc;
+  try {
+    const pdfData = await generateFullAuroraRoboticsCorpusPdf();
+    const parsed = await parsePdfBuffer(pdfData.filename, pdfData.buffer);
+    defaultCognitiveDoc = createKnowledgeDocument(
+      pdfData.filename,
+      pdfData.buffer,
+      parsed.pageCount,
+      parsed.pages,
+      parsed.summary
+    );
+    return defaultCognitiveDoc;
+  } catch (err) {
+    console.error('Failed to generate default cognitive doc:', err);
+    return null;
+  }
+}
+
+// 1. Live Cognitive Reasoning Query Execution
+app.post('/api/v1/cognitive/query', async (req, res) => {
+  try {
+    const { question, chatHistory, tenantId, kbId, forceDeterministic } = req.body || {};
+    if (!question || typeof question !== 'string' || !question.trim()) {
+      return res.status(400).json({ success: false, error: 'Valid question string is required' });
+    }
+
+    const activeKb = kbId ? kbStore.getKB(kbId) : kbStore.getActiveKB();
+    let documents = activeKb?.documents && activeKb.documents.length > 0 ? activeKb.documents : [];
+    if (documents.length === 0) {
+      const defaultDoc = await getDefaultCognitiveDoc();
+      if (defaultDoc) documents = [defaultDoc];
+    }
+
+    const result = await knowledgeCognitiveEngine.answerQuestion({
+      question: question.trim(),
+      chatHistory: Array.isArray(chatHistory) ? chatHistory : [],
+      tenantId: tenantId || 'tenant-default',
+      knowledgeBaseId: activeKb?.id || 'kb-default',
+      documents,
+      forceDeterministic: Boolean(forceDeterministic),
+    });
+
+    res.json({ success: true, result });
+  } catch (err: any) {
+    console.error('Cognitive query error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Internal cognitive engine error' });
+  }
+});
+
+// 2. Aurora 24-Question Benchmark
+app.post('/api/v1/cognitive/benchmarks/aurora', async (req, res) => {
+  try {
+    const benchmark = await runAurora24Benchmark();
+    cachedAuroraBenchmark = { ...benchmark, timestamp: Date.now() };
+    res.json({ success: true, benchmark: cachedAuroraBenchmark });
+  } catch (err: any) {
+    console.error('Aurora benchmark error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to run Aurora benchmark' });
+  }
+});
+
+app.get('/api/v1/cognitive/benchmarks/aurora', async (req, res) => {
+  try {
+    if (!cachedAuroraBenchmark) {
+      const benchmark = await runAurora24Benchmark();
+      cachedAuroraBenchmark = { ...benchmark, timestamp: Date.now() };
+    }
+    res.json({ success: true, benchmark: cachedAuroraBenchmark });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Golden 235-Question Cognitive Benchmark
+app.post('/api/v1/cognitive/benchmarks/golden', async (req, res) => {
+  try {
+    const benchmark = await runGolden220Benchmark();
+    cachedGoldenBenchmark = { ...benchmark, timestamp: Date.now() };
+    res.json({ success: true, benchmark: cachedGoldenBenchmark });
+  } catch (err: any) {
+    console.error('Golden benchmark error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to run Golden benchmark' });
+  }
+});
+
+app.get('/api/v1/cognitive/benchmarks/golden', async (req, res) => {
+  try {
+    if (!cachedGoldenBenchmark) {
+      const benchmark = await runGolden220Benchmark();
+      cachedGoldenBenchmark = { ...benchmark, timestamp: Date.now() };
+    }
+    res.json({ success: true, benchmark: cachedGoldenBenchmark });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Cognitive Diagnostic Telemetry Traces and Summary Statistics
+app.get('/api/v1/cognitive/telemetry', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string, 10) || 50;
+    const tenantId = req.query.tenantId as string;
+    const traces = cognitiveTelemetryStore.getTraces(limit, tenantId);
+    const stats = cognitiveTelemetryStore.getStatistics(tenantId);
+    res.json({ success: true, traces, stats, count: traces.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Knowledge Graph (GraphRAG) Endpoint
+app.get('/api/v1/cognitive/graph', async (req, res) => {
+  try {
+    const tenantId = (req.query.tenantId as string) || 'tenant-default';
+    const activeKb = kbStore.getActiveKB();
+    const kbId = (req.query.kbId as string) || activeKb?.id || 'kb-default';
+
+    let documents = activeKb?.documents && activeKb.documents.length > 0 ? activeKb.documents : [];
+    if (documents.length === 0) {
+      const defaultDoc = await getDefaultCognitiveDoc();
+      if (defaultDoc) documents = [defaultDoc];
+    }
+    for (const doc of documents) {
+      hierarchicalIndex.indexDocument(tenantId, kbId, doc);
+    }
+
+    const graph = knowledgeGraphEngine.getOrCreateGraph(tenantId, kbId);
+    res.json({ success: true, graph, nodeCount: graph.nodes.length, edgeCount: graph.edges.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. Extracted Structured Tables Endpoint
+app.get('/api/v1/cognitive/tables', async (req, res) => {
+  try {
+    const tenantId = (req.query.tenantId as string) || 'tenant-default';
+    const activeKb = kbStore.getActiveKB();
+    const kbId = (req.query.kbId as string) || activeKb?.id || 'kb-default';
+
+    let documents = activeKb?.documents && activeKb.documents.length > 0 ? activeKb.documents : [];
+    if (documents.length === 0) {
+      const defaultDoc = await getDefaultCognitiveDoc();
+      if (defaultDoc) documents = [defaultDoc];
+    }
+    for (const doc of documents) {
+      hierarchicalIndex.indexDocument(tenantId, kbId, doc);
+    }
+
+    const tables = hierarchicalIndex.getStructuredTables(tenantId, kbId);
+    res.json({ success: true, tables, count: tables.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7. Document Layout Outline (TOC) Endpoint
+app.get('/api/v1/cognitive/outline', async (req, res) => {
+  try {
+    const tenantId = (req.query.tenantId as string) || 'tenant-default';
+    const activeKb = kbStore.getActiveKB();
+    const kbId = (req.query.kbId as string) || activeKb?.id || 'kb-default';
+
+    let documents = activeKb?.documents && activeKb.documents.length > 0 ? activeKb.documents : [];
+    if (documents.length === 0) {
+      const defaultDoc = await getDefaultCognitiveDoc();
+      if (defaultDoc) documents = [defaultDoc];
+    }
+    for (const doc of documents) {
+      hierarchicalIndex.indexDocument(tenantId, kbId, doc);
+    }
+
+    const outline = hierarchicalIndex.getDocumentOutline(tenantId, kbId);
+    res.json({ success: true, outline, count: outline.length });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

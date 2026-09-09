@@ -12,10 +12,11 @@ import {
   Code2,
   Brain,
   Network,
+  Cpu,
 } from 'lucide-react';
 import { KnowledgeBase } from '../types';
 
-export type ActiveTab = 'playground' | 'knowledge' | 'config' | 'evaluations' | 'developer' | 'sandbox' | 'mediator';
+export type ActiveTab = 'playground' | 'knowledge' | 'config' | 'evaluations' | 'developer' | 'sandbox' | 'mediator' | 'cognitive';
 
 interface HeaderProps {
   activeKb: KnowledgeBase | null;
@@ -228,6 +229,22 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Multi-Agent Mediator &amp; SaaS</span>
           <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.2 rounded-full font-mono">
             Phase 9
+          </span>
+        </button>
+
+        <button
+          id="nav-tab-cognitive"
+          onClick={() => onTabChange('cognitive')}
+          className={`flex items-center gap-1.5 py-2.5 px-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+            currentTab === 'cognitive'
+              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+          }`}
+        >
+          <Cpu className="w-3.5 h-3.5 text-purple-600" />
+          <span>Cognitive Grounding Studio</span>
+          <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.2 rounded-full font-mono">
+            Phase 10
           </span>
         </button>
       </div>

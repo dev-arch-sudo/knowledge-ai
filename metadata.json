@@ -1,6 +1,6 @@
 {
   "name": "Knowledge AI",
-  "description": "Enterprise multi-tenant SaaS platform and document-grounded Specialized AI service with adaptive evidence orchestration, API key gateway, quota metering, cryptographic audit governance, and operational hardening.",
+  "description": "Enterprise multi-tenant document-grounded AI platform featuring GraphRAG knowledge graph traversal, Corrective RAG (CRAG) self-evaluation, structured PDF table arithmetic, and deterministic reasoning engines.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

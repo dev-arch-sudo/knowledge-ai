@@ -13,6 +13,7 @@ import { EvaluationCenter } from './components/EvaluationCenter';
 import { DeveloperPlatform } from './components/DeveloperPlatform';
 import { Phase4LearningSandbox } from './components/Phase4LearningSandbox';
 import { MediatorOrchestrationView } from './components/MediatorOrchestrationView';
+import { CognitiveStudioView } from './components/CognitiveStudioView';
 import { DocumentViewerModal } from './components/DocumentViewerModal';
 import { TestSuiteModal } from './components/TestSuiteModal';
 import { NewKnowledgeBaseModal } from './components/NewKnowledgeBaseModal';
@@ -569,6 +570,11 @@ export default function App() {
         {/* Tab 7: Phase 5 Multi-Agent Mediator & Reliability */}
         {currentTab === 'mediator' && (
           <MediatorOrchestrationView activeKbId={activeKb?.id} onOpenTestModal={() => setIsTestSuiteModalOpen(true)} />
+        )}
+
+        {/* Tab 8: Phase 10 Cognitive Grounding Studio */}
+        {currentTab === 'cognitive' && (
+          <CognitiveStudioView activeKb={activeKb} />
         )}
       </div>
 
