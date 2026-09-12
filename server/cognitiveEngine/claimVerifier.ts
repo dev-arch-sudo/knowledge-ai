@@ -37,30 +37,45 @@ function approximatelyEqual(a: number, b: number): boolean {
   return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b));
 }
 
-function canDeriveFromEvidence(target: number, evidenceValues: number[]): boolean {
-  const values = Array.from(new Set(evidenceValues)).slice(0, 12);
-  if (values.some((value) => approximatelyEqual(value, target))) return true;
+/**
+ * Prove a derived numeric value from values present in ONE relevant evidence chunk.
+ * Keeping derivation local prevents accidental support from unrelated numbers spread
+ * across different documents/chunks.
+ */
+function canDeriveFromLocalEvidence(target: number, evidenceValues: number[]): boolean {
+  const unique = Array.from(new Set(evidenceValues));
+  if (unique.some((value) => approximatelyEqual(value, target))) return true;
 
-  for (let i = 0; i < values.length; i++) {
-    for (let j = i + 1; j < values.length; j++) {
-      const a = values[i];
-      const b = values[j];
+  for (let i = 0; i < unique.length; i++) {
+    for (let j = i + 1; j < unique.length; j++) {
+      const a = unique[i];
+      const b = unique[j];
       if (approximatelyEqual(a + b, target)) return true;
-      if (approximatelyEqual(Math.abs(a - b), target)) return true;
+      if (approximatelyEqual(Math.abs(a - b), Math.abs(target))) return true;
       if (b !== 0 && approximatelyEqual(a / b, target)) return true;
       if (a !== 0 && approximatelyEqual(b / a, target)) return true;
     }
   }
 
-  // Bounded subset-sum support for deterministic table totals.
-  const subsetValues = values.slice(0, 8);
-  const combinations = 1 << subsetValues.length;
-  for (let mask = 1; mask < combinations; mask++) {
-    let sum = 0;
-    for (let i = 0; i < subsetValues.length; i++) {
-      if (mask & (1 << i)) sum += subsetValues[i];
+  // For positive totals, perform a bounded subset-sum over plausible operands in
+  // the same chunk. Values much larger than the requested total (for example,
+  // years embedded in table dates) cannot contribute to a normal positive sum.
+  if (target > 0 && Number.isInteger(target)) {
+    const candidates = unique
+      .filter((value) => Number.isInteger(value) && value > 0 && value <= target)
+      .slice(0, 24);
+
+    const reachable = new Set<number>([0]);
+    for (const value of candidates) {
+      const additions: number[] = [];
+      for (const sum of reachable) {
+        const next = sum + value;
+        if (next <= target) additions.push(next);
+      }
+      for (const next of additions) reachable.add(next);
+      if (Array.from(reachable).some((sum) => approximatelyEqual(sum, target))) return true;
+      if (reachable.size > 4096) break;
     }
-    if (approximatelyEqual(sum, target)) return true;
   }
 
   return false;
@@ -77,6 +92,33 @@ function isRefusal(text: string): boolean {
     'not present in the uploaded documents',
     'cannot follow instructions that attempt to bypass',
   ].some((phrase) => lower.includes(phrase));
+}
+
+function chunkOverlap(sentenceTokens: string[], chunk: HierarchicalChunk): number {
+  if (!sentenceTokens.length) return 1;
+  const chunkLower = chunk.text.toLowerCase();
+  return sentenceTokens.filter((token) => chunkLower.includes(token)).length / sentenceTokens.length;
+}
+
+function numericProofChunks(
+  sentenceNumbers: number[],
+  sentenceTokens: string[],
+  evidenceChunks: HierarchicalChunk[]
+): HierarchicalChunk[] {
+  if (sentenceNumbers.length === 0) return [];
+
+  const ranked = evidenceChunks
+    .map((chunk) => ({ chunk, overlap: chunkOverlap(sentenceTokens, chunk) }))
+    .filter((item) => item.overlap > 0)
+    .sort((a, b) => b.overlap - a.overlap)
+    .slice(0, 5);
+
+  return ranked
+    .filter(({ chunk }) => {
+      const localValues = numericValues(chunk.text);
+      return sentenceNumbers.every((target) => canDeriveFromLocalEvidence(target, localValues));
+    })
+    .map((item) => item.chunk);
 }
 
 export class ClaimVerificationEngine {
@@ -98,7 +140,6 @@ export class ClaimVerificationEngine {
 
     const claims: ClaimVerificationItem[] = [];
     const citationMap = new Map<string, Citation>();
-    const allEvidenceNumbers = evidenceChunks.flatMap((chunk) => numericValues(chunk.text));
     let contradictionsFound = 0;
 
     for (let index = 0; index < sentences.length; index++) {
@@ -109,19 +150,15 @@ export class ClaimVerificationEngine {
       let bestOverlap = 0;
 
       for (const chunk of evidenceChunks) {
-        const chunkLower = chunk.text.toLowerCase();
-        const overlap = sentenceTokens.length
-          ? sentenceTokens.filter((token) => chunkLower.includes(token)).length / sentenceTokens.length
-          : 1;
+        const overlap = chunkOverlap(sentenceTokens, chunk);
         if (overlap > bestOverlap) {
           bestOverlap = overlap;
           bestChunk = chunk;
         }
       }
 
-      const numbersSupported = sentenceNumbers.length === 0 || sentenceNumbers.every((value) =>
-        canDeriveFromEvidence(value, allEvidenceNumbers)
-      );
+      const proofChunks = numericProofChunks(sentenceNumbers, sentenceTokens, evidenceChunks);
+      const numbersSupported = sentenceNumbers.length === 0 || proofChunks.length > 0;
       const refusal = isRefusal(sentence);
       const supported = refusal
         ? true
@@ -135,18 +172,20 @@ export class ClaimVerificationEngine {
         contradictionsFound += 1;
       }
 
+      const lexicalSupporting = evidenceChunks
+        .filter((chunk) => sentenceTokens.some((token) => chunk.text.toLowerCase().includes(token)));
+      const combinedSupporting = Array.from(new Map(
+        [...proofChunks, ...lexicalSupporting]
+          .map((chunk) => [chunk.chunkId, chunk] as const)
+      ).values()).slice(0, 3);
+
       const supportingChunkIds = supported && !refusal
-        ? evidenceChunks
-            .filter((chunk) => sentenceTokens.some((token) => chunk.text.toLowerCase().includes(token)))
-            .slice(0, 3)
-            .map((chunk) => chunk.chunkId)
+        ? combinedSupporting.map((chunk) => chunk.chunkId)
         : [];
 
       if (supported && !refusal) {
-        const supporting = evidenceChunks
-          .filter((chunk) => supportingChunkIds.includes(chunk.chunkId))
-          .slice(0, 3);
-        for (const chunk of supporting.length ? supporting : (bestChunk ? [bestChunk] : [])) {
+        const supporting = combinedSupporting.length ? combinedSupporting : (bestChunk ? [bestChunk] : []);
+        for (const chunk of supporting) {
           const key = `${chunk.documentId}:${chunk.pageNumber}:${chunk.chunkId}`;
           citationMap.set(key, {
             documentId: chunk.documentId,
@@ -167,9 +206,11 @@ export class ClaimVerificationEngine {
         contradictedByChunkIds: [],
         explanation: refusal
           ? 'The answer abstains rather than introducing an unsupported factual claim.'
-          : supported && numbersSupported
-            ? 'Supported by retrieved document evidence; any derived numeric result is reproducible from grounded operands.'
-            : 'No retrieved evidence sufficiently supports this claim.',
+          : supported && sentenceNumbers.length > 0 && proofChunks.length > 0
+            ? 'Supported by retrieved document evidence; derived numeric values are reproducible from operands in the same relevant evidence chunk.'
+            : supported
+              ? 'Supported by retrieved document evidence.'
+              : 'No retrieved evidence sufficiently supports this claim.',
         temporalStatus: 'ALIGNED',
       });
     }

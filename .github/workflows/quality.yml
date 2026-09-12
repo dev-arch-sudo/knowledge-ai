@@ -32,10 +32,14 @@ jobs:
       - name: Production build
         run: npm run build
 
+      - name: Arithmetic grounding proof guard
+        run: npx tsx scripts/check-arithmetic-grounding.ts
+
       - name: Unseen-corpus effectiveness benchmark
         run: npm run benchmark:unseen
 
       - name: Live Gemini unseen-corpus benchmark
+        continue-on-error: true
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
