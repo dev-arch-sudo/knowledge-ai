@@ -2,12 +2,10 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Corrective RAG (CRAG) & Self-RAG Engine
- * Evaluates retrieved evidence for relevance, completeness, and contradictions.
- * Dynamically generates corrective queries and resolves conflicting statements.
+ * Generic corrective-RAG evaluator.
  */
 
-import { HierarchicalChunk, QuestionUnderstandingProfile, RerankedEvidenceItem } from './types.js';
+import { QuestionUnderstandingProfile, RerankedEvidenceItem } from './types.js';
 
 export type EvidenceGrade = 'CORRECT' | 'AMBIGUOUS' | 'INSUFFICIENT' | 'CONTRADICTORY';
 
@@ -25,125 +23,108 @@ export interface CorrectiveRagAssessment {
   reconciledFacts: string[];
 }
 
+const STOP_WORDS = new Set([
+  'what', 'which', 'where', 'when', 'who', 'why', 'how', 'the', 'and', 'for', 'with', 'from',
+  'this', 'that', 'there', 'does', 'are', 'was', 'were', 'into', 'about', 'tell', 'please',
+]);
+
+function terms(text: string): string[] {
+  return Array.from(new Set(
+    text.toLowerCase().replace(/[^a-z0-9%.-\s]/g, ' ').split(/\s+/)
+      .filter((term) => term.length > 2 && !STOP_WORDS.has(term))
+  ));
+}
+
+function numbers(text: string): string[] {
+  return text.match(/-?\b\d+(?:\.\d+)?\b/g) || [];
+}
+
 export class CorrectiveRagEngine {
-  /**
-   * Evaluate evidence items against question intent and identify gaps or contradictions
-   */
   public assessEvidence(
     profile: QuestionUnderstandingProfile,
     evidenceItems: RerankedEvidenceItem[]
   ): CorrectiveRagAssessment {
-    const qLower = profile.normalizedQuestion.toLowerCase();
-    const gapAnalysis: string[] = [];
-    const correctiveQueries: string[] = [];
-    const reconciledFacts: string[] = [];
-
-    // Check if evidence items exist
-    if (evidenceItems.length === 0) {
+    if (!evidenceItems.length) {
       return {
         grade: 'INSUFFICIENT',
         confidenceScore: 0,
-        gapAnalysis: ['No matching document chunks found in index.'],
+        gapAnalysis: ['No matching evidence chunks were retrieved.'],
         correctiveQueries: [profile.normalizedQuestion],
         reconciledFacts: [],
       };
     }
 
-    const combinedText = evidenceItems.map((e) => e.chunk.text).join('\n\n').toLowerCase();
+    const evidenceText = evidenceItems.map((item) => item.chunk.text).join('\n').toLowerCase();
+    const queryTerms = terms(profile.normalizedQuestion);
+    const coveredTerms = queryTerms.filter((term) => evidenceText.includes(term));
+    const coverage = queryTerms.length ? coveredTerms.length / queryTerms.length : 0;
 
-    // 1. Contradiction Detection (e.g. 40kg vs 400kg or active vs future)
-    if (qLower.includes('400') || qLower.includes('contradict') || (qLower.includes('40') && qLower.includes('400'))) {
-      if (combinedText.includes('40 kg') || combinedText.includes('40kg')) {
+    const missingEntities = profile.entities.filter(
+      (entity) => !evidenceText.includes(entity.toLowerCase())
+    );
+    const missingAttributes = profile.attributes.filter(
+      (attribute) => !evidenceText.includes(attribute.toLowerCase())
+    );
+
+    const correctiveQueries: string[] = [];
+    for (const entity of missingEntities.slice(0, 3)) {
+      correctiveQueries.push(`${entity} ${profile.attributes.join(' ')}`.trim());
+    }
+    if (!correctiveQueries.length && missingAttributes.length) {
+      correctiveQueries.push(`${profile.entities.join(' ')} ${missingAttributes.join(' ')}`.trim());
+    }
+
+    if (profile.classification === 'CORRECTION' && profile.userCorrectionAssertion) {
+      const asserted = profile.userCorrectionAssertion;
+      const evidenceNumbers = new Set(numbers(evidenceText));
+      if (!evidenceNumbers.has(asserted)) {
         return {
           grade: 'CONTRADICTORY',
-          confidenceScore: 0.98,
-          gapAnalysis: ['Document text confirms 40 kg, while prompt posits 400 kg contradiction.'],
-          correctiveQueries: ['AR-40 heavy-payload automated transporter payload specifications'],
+          confidenceScore: 0.9,
+          gapAnalysis: [`The user's asserted value (${asserted}) is not supported by the retrieved evidence.`],
+          correctiveQueries: correctiveQueries.length ? correctiveQueries : [profile.normalizedQuestion],
           contradictionResolution: {
-            conflictingStatements: [
-              'Prompt statement: "Document says AR-40 carries 400 kg"',
-              'Document Section 2: "AR-40 payload capacity is exactly 40 kg"',
-            ],
-            authoritativeResolution:
-              'The authoritative document specification states that the AR-40 carries 40 kg. The claim of 400 kg is an unverified assertion not present in official specifications.',
-            reason: 'Section 2 table of official technical specifications takes precedence.',
+            conflictingStatements: [`User assertion includes ${asserted}`, 'Retrieved evidence does not substantiate that value.'],
+            authoritativeResolution: 'Prefer values explicitly present in the retrieved document evidence.',
+            reason: 'Uploaded document evidence is authoritative for grounded answering.',
           },
-          reconciledFacts: ['AR-40 payload capacity is 40 kg.'],
+          reconciledFacts: [],
         };
       }
     }
 
-    // 2. Correction Rejection (e.g. user claims "Actually AR-40 payload is 100kg")
-    if (profile.classification === 'CORRECTION' || qLower.includes('actually')) {
-      const statedPayloadMatch = qLower.match(/actually[,\s]+.*?(\d+)\s*kg/i);
-      const statedVal = statedPayloadMatch ? statedPayloadMatch[1] : 'unverified';
+    if (coverage < 0.2 && missingEntities.length > 0) {
       return {
-        grade: 'CONTRADICTORY',
-        confidenceScore: 0.99,
-        gapAnalysis: [`User asserted payload of ${statedVal} kg which contradicts official corpus.`],
-        correctiveQueries: ['AR-40 official payload capacity'],
-        contradictionResolution: {
-          conflictingStatements: [
-            `User suggestion: AR-40 payload is ${statedVal} kg`,
-            'Corpus specification: AR-40 payload is 40 kg',
-          ],
-          authoritativeResolution:
-            'Refuting correction: The authoritative corpus strictly records the AR-40 payload as 40 kg. User-injected modifications are rejected.',
-          reason: 'Corpus immutability and grounding guardrail.',
-        },
-        reconciledFacts: ['AR-40 official payload is 40 kg.'],
-      };
-    }
-
-    // 3. Temporal Disambiguation (e.g. Tokyo 2027 planned vs 2026 operational)
-    if (qLower.includes('tokyo') || qLower.includes('2027')) {
-      return {
-        grade: 'CORRECT',
-        confidenceScore: 0.96,
-        gapAnalysis: [],
-        correctiveQueries: [],
-        contradictionResolution: {
-          conflictingStatements: [
-            'Section 1: 4 currently operational warehouses in Singapore, Malaysia, and Thailand (300 active robots total).',
-            'Section 5: Tokyo Distribution Center planned for Q2 2027 (50 planned robots).',
-          ],
-          authoritativeResolution:
-            'Tokyo is currently NOT an operational warehouse in 2026. It is a planned future facility scheduled for opening in Q2 2027 with an anticipated 50 robots.',
-          reason: 'Distinguishing active operational inventory from forward-looking projections.',
-        },
-        reconciledFacts: [
-          'Tokyo facility is scheduled for Q2 2027.',
-          'Tokyo planned robot count is 50 robots.',
-          'Tokyo is excluded from current active count (300 robots across 4 active facilities).',
+        grade: 'INSUFFICIENT',
+        confidenceScore: Math.max(0.1, coverage),
+        gapAnalysis: [
+          `Low query-term coverage (${coverage.toFixed(2)}).`,
+          `Missing entities: ${missingEntities.join(', ')}`,
         ],
+        correctiveQueries: correctiveQueries.length ? correctiveQueries : [profile.normalizedQuestion],
+        reconciledFacts: [],
       };
     }
 
-    // 4. Multi-Entity Completeness Check
-    const missingEntities: string[] = [];
-    profile.entities.forEach((ent) => {
-      if (!combinedText.includes(ent.toLowerCase())) {
-        missingEntities.push(ent);
-      }
-    });
-
-    if (missingEntities.length > 0) {
-      missingEntities.forEach((m) => correctiveQueries.push(`Details and specifications for ${m}`));
+    if (missingEntities.length > 0 || missingAttributes.length > 0) {
       return {
         grade: 'AMBIGUOUS',
-        confidenceScore: 0.72,
-        gapAnalysis: [`Missing explicit mentions for entity: ${missingEntities.join(', ')}`],
+        confidenceScore: Math.max(0.45, coverage),
+        gapAnalysis: [
+          ...(missingEntities.length ? [`Missing explicit entity coverage: ${missingEntities.join(', ')}`] : []),
+          ...(missingAttributes.length ? [`Missing attribute coverage: ${missingAttributes.join(', ')}`] : []),
+        ],
         correctiveQueries,
-        reconciledFacts,
+        reconciledFacts: [],
       };
     }
 
     return {
       grade: 'CORRECT',
-      confidenceScore: 0.95,
+      confidenceScore: Math.min(0.98, 0.65 + coverage * 0.3),
       gapAnalysis: [],
       correctiveQueries: [],
-      reconciledFacts: ['All primary query entities substantiated in authoritative evidence.'],
+      reconciledFacts: ['Retrieved evidence covers the primary entities and attributes required by the query.'],
     };
   }
 }

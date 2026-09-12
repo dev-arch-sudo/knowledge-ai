@@ -2,12 +2,11 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Deterministic Table Query & Symbolic Arithmetic Engine
- * Executes formal mathematical calculations, aggregations, and table filtering
- * with verified step-by-step proofs rather than relying on probabilistic LLM arithmetic.
+ * Generic deterministic table arithmetic engine.
+ * All operands are derived from extracted document tables at runtime.
  */
 
-import { ExtractedStructuredTable } from './complexPdfParser.js';
+import { ExtractedStructuredTable, ParsedTableRow } from './complexPdfParser.js';
 
 export interface ArithmeticExecutionResult {
   isApplicable: boolean;
@@ -19,165 +18,169 @@ export interface ArithmeticExecutionResult {
   groundedAnswer: string;
 }
 
+function words(text: string): string[] {
+  return text.toLowerCase().replace(/[^a-z0-9%\s.-]/g, ' ').split(/\s+/).filter((word) => word.length > 2);
+}
+
+function relevance(query: string, text: string): number {
+  const queryWords = words(query);
+  if (!queryWords.length) return 0;
+  const lower = text.toLowerCase();
+  return queryWords.filter((word) => lower.includes(word)).length / queryWords.length;
+}
+
+function numericColumns(table: ExtractedStructuredTable): string[] {
+  return table.columns
+    .filter((column) => column.type === 'number' || column.type === 'percentage')
+    .map((column) => column.name);
+}
+
+function rowLabel(row: ParsedTableRow): string {
+  const firstText = Object.values(row).find((value) => typeof value === 'string' && value.trim().length > 0);
+  return firstText ? String(firstText) : 'Row';
+}
+
+function numberFrom(row: ParsedTableRow, column: string): number | null {
+  const raw = row[column];
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const parsed = Number.parseFloat(raw.replace(/[,$%]/g, ''));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 export class TableArithmeticEngine {
-  /**
-   * Evaluate a question against known document entities or extracted tables
-   */
   public evaluateArithmeticOrTabularQuery(
     question: string,
     extractedTables: ExtractedStructuredTable[] = []
   ): ArithmeticExecutionResult | null {
+    if (!extractedTables.length) return null;
     const q = question.toLowerCase();
+    const wantsMath = /\b(total|sum|combined|average|mean|difference|how many more|how much more|ratio|percentage|percent|largest|highest|most|smallest|lowest|least|second largest|second highest)\b/.test(q);
+    if (!wantsMath) return null;
 
-    // 1. Combined battery capacity of AR-10 and AR-40
-    if (
-      (q.includes('combined battery') || q.includes('sum of battery') || q.includes('total battery')) &&
-      (q.includes('ar-10') || q.includes('ar10')) &&
-      (q.includes('ar-40') || q.includes('ar40'))
-    ) {
-      const ar10Batt = 4.5;
-      const ar40Batt = 12.0;
-      const sum = ar10Batt + ar40Batt;
-      return {
-        isApplicable: true,
-        operation: 'SUM',
-        operands: [
-          { label: 'AR-10 Battery Capacity', value: ar10Batt, unit: 'kWh' },
-          { label: 'AR-40 Battery Capacity', value: ar40Batt, unit: 'kWh' },
-        ],
-        computedValue: sum,
-        formattedFormula: `${ar10Batt} kWh + ${ar40Batt} kWh = ${sum.toFixed(1)} kWh`,
-        stepByStepProof: `Step 1: Extract AR-10 battery capacity from Section 2 (4.5 kWh).\nStep 2: Extract AR-40 battery capacity from Section 2 (12.0 kWh).\nStep 3: Execute addition: 4.5 + 12.0 = 16.5 kWh.`,
-        groundedAnswer: `The combined battery capacity of AR-10 and AR-40 is **16.5 kWh** (AR-10 has 4.5 kWh, AR-40 has 12.0 kWh).`,
-      };
-    }
+    const rankedTables = extractedTables
+      .map((table) => ({ table, score: relevance(question, `${table.title || ''} ${table.summary} ${table.columns.map((column) => column.name).join(' ')}`) }))
+      .sort((a, b) => b.score - a.score);
 
-    // 2. Difference in robot count between Singapore Central and Kuala Lumpur
-    if (
-      q.includes('difference') &&
-      q.includes('singapore central') &&
-      q.includes('kuala lumpur')
-    ) {
-      const sg = 120;
-      const kl = 60;
-      const diff = sg - kl;
-      return {
-        isApplicable: true,
-        operation: 'DIFFERENCE',
-        operands: [
-          { label: 'Singapore Central Fleet', value: sg, unit: 'robots' },
-          { label: 'Kuala Lumpur Fleet', value: kl, unit: 'robots' },
-        ],
-        computedValue: diff,
-        formattedFormula: `${sg} - ${kl} = ${diff}`,
-        stepByStepProof: `Step 1: Extract Singapore Central robot allocation (120 robots).\nStep 2: Extract Kuala Lumpur robot allocation (60 robots).\nStep 3: Calculate difference: 120 - 60 = 60 robots.`,
-        groundedAnswer: `The difference in robot count between Singapore Central (120 robots) and Kuala Lumpur Distribution Hub (60 robots) is exactly **60 robots**.`,
-      };
-    }
+    for (const { table } of rankedTables) {
+      const columns = numericColumns(table);
+      if (!columns.length || table.rows.length === 0) continue;
 
-    // 3. Second largest robot fleet
-    if (
-      (q.includes('second largest') || q.includes('2nd largest')) &&
-      (q.includes('warehouse') || q.includes('fleet') || q.includes('facility'))
-    ) {
-      return {
-        isApplicable: true,
-        operation: 'RANK_SELECTION',
-        operands: [
-          { label: 'Singapore Central Logistics Hub', value: 120, unit: 'robots' },
-          { label: 'Singapore North Fulfillment Depot', value: 80, unit: 'robots' },
-          { label: 'Kuala Lumpur Distribution Hub', value: 60, unit: 'robots' },
-          { label: 'Bangkok Regional Transit Facility', value: 40, unit: 'robots' },
-        ],
-        computedValue: 'Singapore North Fulfillment Depot (80 robots)',
-        formattedFormula: `Rank 1: Singapore Central (120) > Rank 2: Singapore North (80) > Rank 3: Kuala Lumpur (60) > Rank 4: Bangkok (40)`,
-        stepByStepProof: `Step 1: Retrieve all operational facilities and their robot counts.\nStep 2: Sort descending: Singapore Central (120), Singapore North (80), Kuala Lumpur (60), Bangkok (40).\nStep 3: Identify Rank #2: Singapore North Fulfillment Depot with 80 robots.`,
-        groundedAnswer: `The warehouse facility with the second largest robot fleet is **Singapore North Fulfillment Depot** with **80 robots**.`,
-      };
-    }
+      const rankedColumns = columns
+        .map((column) => ({ column, score: relevance(question, column) }))
+        .sort((a, b) => b.score - a.score);
+      const column = rankedColumns[0].column;
+      const values = table.rows
+        .map((row) => ({ label: rowLabel(row), value: numberFrom(row, column), row }))
+        .filter((item): item is { label: string; value: number; row: ParsedTableRow } => item.value !== null);
+      if (!values.length) continue;
 
-    // 4. Combined robot count across Singapore Central and Singapore North
-    if (
-      (q.includes('combined robot count') || q.includes('total robots in singapore') || q.includes('combined across singapore central and singapore north')) ||
-      (q.includes('singapore central') && q.includes('singapore north') && (q.includes('combined') || q.includes('total')))
-    ) {
-      const sum = 120 + 80;
-      return {
-        isApplicable: true,
-        operation: 'SUM',
-        operands: [
-          { label: 'Singapore Central', value: 120, unit: 'robots' },
-          { label: 'Singapore North', value: 80, unit: 'robots' },
-        ],
-        computedValue: sum,
-        formattedFormula: `120 + 80 = ${sum}`,
-        stepByStepProof: `Step 1: Singapore Central allocation = 120.\nStep 2: Singapore North allocation = 80.\nStep 3: Sum = 120 + 80 = 200 robots.`,
-        groundedAnswer: `The combined robot count across Singapore Central (120) and Singapore North (80) is exactly **200 robots**.`,
-      };
-    }
+      const mentionedRows = values.filter((item) => q.includes(item.label.toLowerCase()));
+      const selected = mentionedRows.length >= 1 ? mentionedRows : values;
 
-    // 5. Robots stationed outside of Singapore
-    if (
-      q.includes('outside of singapore') ||
-      q.includes('outside singapore') ||
-      (q.includes('non-singapore') && q.includes('robots'))
-    ) {
-      const kl = 60;
-      const bkk = 40;
-      const sum = kl + bkk;
-      return {
-        isApplicable: true,
-        operation: 'SUM',
-        operands: [
-          { label: 'Kuala Lumpur (Malaysia)', value: kl, unit: 'robots' },
-          { label: 'Bangkok (Thailand)', value: bkk, unit: 'robots' },
-        ],
-        computedValue: sum,
-        formattedFormula: `${kl} (KL) + ${bkk} (Bangkok) = ${sum}`,
-        stepByStepProof: `Step 1: Identify all facilities located outside Singapore: Kuala Lumpur (60) and Bangkok (40).\nStep 2: Calculate sum: 60 + 40 = 100 robots.`,
-        groundedAnswer: `The number of robots stationed in warehouse facilities outside of Singapore is exactly **100 robots** (Kuala Lumpur has 60 robots and Bangkok has 40 robots).`,
-      };
-    }
+      if (/\b(second largest|second highest|2nd largest|2nd highest)\b/.test(q) && values.length >= 2) {
+        const ordered = [...values].sort((a, b) => b.value - a.value);
+        const winner = ordered[1];
+        return {
+          isApplicable: true,
+          operation: 'RANK_SELECTION',
+          operands: ordered.map((item) => ({ label: item.label, value: item.value })),
+          computedValue: `${winner.label} (${winner.value})`,
+          formattedFormula: ordered.map((item, index) => `#${index + 1} ${item.label}: ${item.value}`).join(' > '),
+          stepByStepProof: `Read ${column} from table "${table.title || 'Table'}" on page ${table.pageNumber}, sort descending, and select rank 2.`,
+          groundedAnswer: `Based on **${table.title || `the table on page ${table.pageNumber}`}**, the second-highest **${column}** is **${winner.label}** with **${winner.value}**.`,
+        };
+      }
 
-    // 6. Generic Table Aggregation across extracted tables from uploaded PDFs
-    for (const table of extractedTables) {
-      // Find numeric columns
-      const numericCols = table.columns.filter((c) => c.type === 'number');
-      if (numericCols.length > 0) {
-        for (const col of numericCols) {
-          const colNameLower = col.name.toLowerCase();
-          if (q.includes(colNameLower) || (q.includes('total') && q.includes(colNameLower))) {
-            const values = table.rows.map((r) => Number(r[col.name])).filter((v) => !isNaN(v));
-            if (values.length > 0) {
-              if (q.includes('total') || q.includes('sum') || q.includes('combined')) {
-                const total = values.reduce((a, b) => a + b, 0);
-                return {
-                  isApplicable: true,
-                  operation: 'AGGREGATE_TABLE',
-                  operands: values.map((v, i) => ({ label: `Row ${i + 1}`, value: v })),
-                  computedValue: total,
-                  formattedFormula: `SUM(${col.name}) = ${total}`,
-                  stepByStepProof: `Extracted ${values.length} records from table "${table.title || 'Table'}" column "${col.name}". Summed values: ${values.join(' + ')} = ${total}.`,
-                  groundedAnswer: `Based on table **${table.title || 'Table on Page ' + table.pageNumber}**, the total for **${col.name}** across all rows is **${total}**.`,
-                };
-              }
+      if (/\b(largest|highest|most|maximum)\b/.test(q)) {
+        const winner = [...selected].sort((a, b) => b.value - a.value)[0];
+        return {
+          isApplicable: true,
+          operation: 'RANK_SELECTION',
+          operands: selected.map((item) => ({ label: item.label, value: item.value })),
+          computedValue: `${winner.label} (${winner.value})`,
+          formattedFormula: `MAX(${column}) = ${winner.value}`,
+          stepByStepProof: `Read ${column} from table "${table.title || 'Table'}" and select the maximum value.`,
+          groundedAnswer: `Based on **${table.title || `the table on page ${table.pageNumber}`}**, **${winner.label}** has the highest **${column}** at **${winner.value}**.`,
+        };
+      }
 
-              if (q.includes('average') || q.includes('mean')) {
-                const total = values.reduce((a, b) => a + b, 0);
-                const avg = total / values.length;
-                return {
-                  isApplicable: true,
-                  operation: 'AGGREGATE_TABLE',
-                  operands: values.map((v, i) => ({ label: `Row ${i + 1}`, value: v })),
-                  computedValue: avg,
-                  formattedFormula: `AVG(${col.name}) = ${avg.toFixed(2)}`,
-                  stepByStepProof: `Extracted ${values.length} records from table "${table.title || 'Table'}" column "${col.name}". Computed average: ${total} / ${values.length} = ${avg.toFixed(2)}.`,
-                  groundedAnswer: `Based on table **${table.title || 'Table on Page ' + table.pageNumber}**, the average **${col.name}** is **${avg.toFixed(2)}**.`,
-                };
-              }
-            }
-          }
+      if (/\b(smallest|lowest|least|minimum)\b/.test(q)) {
+        const winner = [...selected].sort((a, b) => a.value - b.value)[0];
+        return {
+          isApplicable: true,
+          operation: 'RANK_SELECTION',
+          operands: selected.map((item) => ({ label: item.label, value: item.value })),
+          computedValue: `${winner.label} (${winner.value})`,
+          formattedFormula: `MIN(${column}) = ${winner.value}`,
+          stepByStepProof: `Read ${column} from table "${table.title || 'Table'}" and select the minimum value.`,
+          groundedAnswer: `Based on **${table.title || `the table on page ${table.pageNumber}`}**, **${winner.label}** has the lowest **${column}** at **${winner.value}**.`,
+        };
+      }
+
+      if (/\b(difference|how many more|how much more)\b/.test(q) && selected.length >= 2) {
+        const [first, second] = selected.slice(0, 2);
+        const difference = Math.abs(first.value - second.value);
+        return {
+          isApplicable: true,
+          operation: 'DIFFERENCE',
+          operands: [
+            { label: first.label, value: first.value },
+            { label: second.label, value: second.value },
+          ],
+          computedValue: difference,
+          formattedFormula: `|${first.value} - ${second.value}| = ${difference}`,
+          stepByStepProof: `Read ${first.label}=${first.value} and ${second.label}=${second.value} from ${column}, then compute the absolute difference.`,
+          groundedAnswer: `The difference in **${column}** between **${first.label}** and **${second.label}** is **${difference}**.`,
+        };
+      }
+
+      if (/\b(percentage|percent)\b/.test(q) && selected.length >= 1) {
+        const numerator = selected[0];
+        const total = values.reduce((sum, item) => sum + item.value, 0);
+        if (total !== 0) {
+          const percentage = (numerator.value / total) * 100;
+          return {
+            isApplicable: true,
+            operation: 'PERCENTAGE',
+            operands: [
+              { label: numerator.label, value: numerator.value },
+              { label: `Total ${column}`, value: total },
+            ],
+            computedValue: percentage,
+            formattedFormula: `${numerator.value} / ${total} × 100 = ${percentage.toFixed(2)}%`,
+            stepByStepProof: `Sum ${column} across the table (${total}), divide ${numerator.label}'s value (${numerator.value}) by that total, then multiply by 100.`,
+            groundedAnswer: `**${numerator.label}** represents **${percentage.toFixed(2)}%** of the table total for **${column}**.`,
+          };
         }
+      }
+
+      if (/\b(average|mean)\b/.test(q)) {
+        const average = selected.reduce((sum, item) => sum + item.value, 0) / selected.length;
+        return {
+          isApplicable: true,
+          operation: 'AGGREGATE_TABLE',
+          operands: selected.map((item) => ({ label: item.label, value: item.value })),
+          computedValue: average,
+          formattedFormula: `AVG(${column}) = ${average.toFixed(2)}`,
+          stepByStepProof: `Read ${selected.length} values from ${column} and divide their sum by ${selected.length}.`,
+          groundedAnswer: `Based on **${table.title || `the table on page ${table.pageNumber}`}**, the average **${column}** is **${average.toFixed(2)}**.`,
+        };
+      }
+
+      if (/\b(total|sum|combined)\b/.test(q)) {
+        const total = selected.reduce((sum, item) => sum + item.value, 0);
+        return {
+          isApplicable: true,
+          operation: 'AGGREGATE_TABLE',
+          operands: selected.map((item) => ({ label: item.label, value: item.value })),
+          computedValue: total,
+          formattedFormula: selected.map((item) => item.value).join(' + ') + ` = ${total}`,
+          stepByStepProof: `Read ${column} from ${selected.length} matching table rows and sum the values.`,
+          groundedAnswer: `Based on **${table.title || `the table on page ${table.pageNumber}`}**, the combined **${column}** is **${total}**.`,
+        };
       }
     }
 

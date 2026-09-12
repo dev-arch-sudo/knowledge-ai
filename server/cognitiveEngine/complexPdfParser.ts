@@ -2,15 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Complex PDF Layout & Structure Parser
- * Inspired by open-source systems: RAGFlow (DeepDoc), MinerU (PDF-Extract-Kit), and Marker.
- *
- * Capabilities:
- * 1. Multi-column text flow reconstruction (preventing cross-column text interleaving)
- * 2. Structured table extraction (markdown tables, column headers, typed cell values)
- * 3. Document outline / Table of Contents (TOC) hierarchy with breadcrumbs
- * 4. Key-Value parameter specification extraction (e.g., "Payload: 40 kg", "Battery: 12.0 kWh")
- * 5. Footnote, caveat, and condition binding
+ * Corpus-agnostic PDF text structure parser.
+ * Extracts headings, pipe tables, aligned records, and key-value specs only
+ * from the supplied document text. No domain facts are synthesized in code.
  */
 
 export interface ParsedTableColumn {
@@ -44,7 +38,7 @@ export interface ExtractedKeyValueSpec {
 export interface DocumentSectionNode {
   id: string;
   title: string;
-  level: number; // 1 = H1/Chapter, 2 = H2/Section, 3 = H3/Subsection
+  level: number;
   pageNumber: number;
   breadcrumbs: string[];
   content: string;
@@ -62,10 +56,23 @@ export interface ComplexPdfParseResult {
   reconstructedText: string;
 }
 
+function inferColumnType(values: Array<string | number | null>): ParsedTableColumn['type'] {
+  const nonEmpty = values.filter((value) => value !== null && String(value).trim() !== '');
+  if (nonEmpty.length === 0) return 'string';
+  if (nonEmpty.every((value) => /^-?\d+(?:\.\d+)?%$/.test(String(value).trim()))) return 'percentage';
+  if (nonEmpty.every((value) => !Number.isNaN(Number(String(value).replace(/[,$%]/g, ''))))) return 'number';
+  if (nonEmpty.every((value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value).trim()))) return 'date';
+  return 'string';
+}
+
+function normalizeCell(value: string): string | number {
+  const cleaned = value.trim();
+  const numeric = cleaned.replace(/[,$]/g, '');
+  if (/^-?\d+(?:\.\d+)?$/.test(numeric)) return Number(numeric);
+  return cleaned;
+}
+
 export class ComplexPdfParser {
-  /**
-   * Parse a raw text stream or page collection into structured layout elements
-   */
   public parseDocumentPages(
     filename: string = 'Document',
     pages: Array<{ pageNumber: number; text?: string; content?: string }> = []
@@ -76,89 +83,96 @@ export class ComplexPdfParser {
     const safeFilename = filename || 'Document';
     let docTitle = safeFilename.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ');
 
-    let currentL1Section: DocumentSectionNode | null = null;
-    let currentL2Section: DocumentSectionNode | null = null;
+    let currentL1: DocumentSectionNode | null = null;
+    let currentL2: DocumentSectionNode | null = null;
 
     pages.forEach((page) => {
-      const pageText = page.text || page.content || '';
-      const reconstructedPage = this.reconstructColumnFlow(pageText);
-
-      // Extract tables on this page
-      const pageTables = this.extractTablesFromText(reconstructedPage, page.pageNumber);
+      const raw = page.text || page.content || '';
+      const text = this.reconstructColumnFlow(raw);
+      const pageTables = this.extractTablesFromText(text, page.pageNumber);
       tables.push(...pageTables);
 
-      // Extract key-value specs on this page
-      const pageSpecs = this.extractKeyValueSpecs(reconstructedPage, page.pageNumber, currentL1Section?.title || 'General');
-      specs.push(...pageSpecs);
-
-      // Parse section headings & outline
-      const lines = reconstructedPage.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
+      const lines = text.split('\n');
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index].trim();
         if (!line) continue;
 
-        // Detect Title on Page 1
-        if (page.pageNumber === 1 && !currentL1Section && (line.length > 5 && line.length < 80) && !line.includes(':') && !line.startsWith('-')) {
-          if (line.toLowerCase().includes('report') || line.toLowerCase().includes('manual') || line.toLowerCase().includes('overview') || line.toLowerCase().includes('documentation') || line.toLowerCase().includes('corpus')) {
-            docTitle = line;
+        if (page.pageNumber === 1 && index < 6 && line.length >= 4 && line.length <= 100 && !line.includes('|')) {
+          if (/^(#\s*)?[A-Z][A-Za-z0-9 &'()\-:]+$/.test(line) && !line.endsWith('.')) {
+            docTitle = line.replace(/^#+\s*/, '');
           }
         }
 
-        // Detect H1 / Major Section (e.g. "Section 1: Active Fleet Architecture" or "1. Overview" or ALL CAPS)
-        const isH1 =
-          /^(section\s+\d+|chapter\s+\d+|\d+\.\s+[a-z]+)/i.test(line) ||
-          (line.length > 5 && line.length < 60 && line === line.toUpperCase() && !line.includes('|') && !line.startsWith('---'));
+        const markdownHeading = line.match(/^(#{1,3})\s+(.+)$/);
+        const numberedH1 = /^(?:section|chapter)\s+\d+\b|^\d+\.\s+\S+/i.test(line);
+        const allCaps = line.length >= 5 && line.length <= 70 && line === line.toUpperCase() && /[A-Z]/.test(line) && !line.includes('|');
+        const numberedH2 = /^\d+\.\d+\s+\S+/.test(line);
 
-        if (isH1) {
-          const cleanTitle = line.replace(/^[#\s]+/, '').replace(/^section\s+\d+:\s*/i, (m) => m);
-          currentL1Section = {
+        if ((markdownHeading && markdownHeading[1].length === 1) || numberedH1 || allCaps) {
+          const title = markdownHeading ? markdownHeading[2].trim() : line.replace(/^#+\s*/, '');
+          currentL1 = {
             id: `sec_h1_${page.pageNumber}_${outline.length + 1}`,
-            title: cleanTitle,
+            title,
             level: 1,
             pageNumber: page.pageNumber,
-            breadcrumbs: [docTitle, cleanTitle],
+            breadcrumbs: [docTitle, title],
             content: '',
             tables: [],
             specs: [],
             subsections: [],
           };
-          outline.push(currentL1Section);
-          currentL2Section = null;
+          outline.push(currentL1);
+          currentL2 = null;
           continue;
         }
 
-        // Detect H2 / Subsection (e.g. "1.1 Warehouse Fleet Allocation" or "Subsection: ...")
-        const isH2 =
-          /^(\d+\.\d+\s+[a-z]+|subsection|part\s+[a-z]+)/i.test(line) ||
-          (line.endsWith(':') && line.length > 5 && line.length < 50 && !line.includes('http') && !line.includes('|'));
-
-        if (isH2 && currentL1Section) {
-          const cleanSubTitle = line.replace(/^[#\s]+/, '').replace(/:$/, '');
-          currentL2Section = {
-            id: `sec_h2_${page.pageNumber}_${currentL1Section.subsections.length + 1}`,
-            title: cleanSubTitle,
+        if ((markdownHeading && markdownHeading[1].length >= 2) || numberedH2) {
+          const title = markdownHeading ? markdownHeading[2].trim() : line.replace(/^#+\s*/, '');
+          if (!currentL1) {
+            currentL1 = {
+              id: `sec_h1_${page.pageNumber}_${outline.length + 1}`,
+              title: docTitle,
+              level: 1,
+              pageNumber: page.pageNumber,
+              breadcrumbs: [docTitle],
+              content: '',
+              tables: [],
+              specs: [],
+              subsections: [],
+            };
+            outline.push(currentL1);
+          }
+          currentL2 = {
+            id: `sec_h2_${page.pageNumber}_${currentL1.subsections.length + 1}`,
+            title,
             level: 2,
             pageNumber: page.pageNumber,
-            breadcrumbs: [docTitle, currentL1Section.title, cleanSubTitle],
+            breadcrumbs: [docTitle, currentL1.title, title],
             content: '',
             tables: [],
             specs: [],
             subsections: [],
           };
-          currentL1Section.subsections.push(currentL2Section);
+          currentL1.subsections.push(currentL2);
           continue;
         }
 
-        // Append line to current section content
-        if (currentL2Section) {
-          currentL2Section.content += line + '\n';
-        } else if (currentL1Section) {
-          currentL1Section.content += line + '\n';
-        }
+        if (currentL2) currentL2.content += `${line}\n`;
+        else if (currentL1) currentL1.content += `${line}\n`;
+      }
+
+      const sectionName = currentL2?.title || currentL1?.title || 'General';
+      const pageSpecs = this.extractKeyValueSpecs(text, page.pageNumber, sectionName);
+      specs.push(...pageSpecs);
+      if (currentL2) {
+        currentL2.tables.push(...pageTables);
+        currentL2.specs.push(...pageSpecs);
+      } else if (currentL1) {
+        currentL1.tables.push(...pageTables);
+        currentL1.specs.push(...pageSpecs);
       }
     });
 
-    // If no explicit outline was found, create a sensible default
     if (outline.length === 0) {
       outline.push({
         id: 'sec_h1_default',
@@ -166,14 +180,12 @@ export class ComplexPdfParser {
         level: 1,
         pageNumber: 1,
         breadcrumbs: [docTitle],
-        content: pages.map((p) => p.text).join('\n\n'),
+        content: pages.map((page) => page.text || page.content || '').join('\n\n'),
         tables,
         specs,
         subsections: [],
       });
     }
-
-    const reconstructedText = pages.map((p) => `--- Page ${p.pageNumber} ---\n${p.text}`).join('\n\n');
 
     return {
       title: docTitle,
@@ -181,381 +193,161 @@ export class ComplexPdfParser {
       outline,
       tables,
       specs,
-      reconstructedText,
+      reconstructedText: pages
+        .map((page) => `--- Page ${page.pageNumber} ---\n${page.text || page.content || ''}`)
+        .join('\n\n'),
     };
   }
 
-  /**
-   * Reconstruct Multi-Column Flow
-   * Identifies multi-column text structures and reorganizes lines in natural reading sequence
-   */
   public reconstructColumnFlow(rawPageText: string): string {
     const lines = rawPageText.split('\n');
     if (lines.length < 10) return rawPageText;
 
-    // Check if the page displays two distinct horizontal columns (e.g. large indentation or repeated column breaks)
-    let hasColumnGaps = 0;
-    lines.forEach((line) => {
-      if (/\s{6,}\S/.test(line)) {
-        hasColumnGaps++;
-      }
-    });
+    const splitCandidates = lines.filter((line) => /\S\s{6,}\S/.test(line));
+    if (splitCandidates.length / lines.length <= 0.35) return rawPageText;
 
-    // If more than 35% of lines have wide interior whitespace gaps, it's likely a 2-column layout
-    if (hasColumnGaps / lines.length > 0.35) {
-      const leftCol: string[] = [];
-      const rightCol: string[] = [];
-
-      lines.forEach((line) => {
-        const parts = line.split(/\s{4,}/);
-        if (parts.length >= 2) {
-          leftCol.push(parts[0].trim());
-          rightCol.push(parts.slice(1).join(' ').trim());
-        } else {
-          leftCol.push(line.trim());
-        }
-      });
-
-      return `${leftCol.join('\n')}\n\n${rightCol.join('\n')}`;
+    const left: string[] = [];
+    const right: string[] = [];
+    for (const line of lines) {
+      const parts = line.split(/\s{4,}/);
+      left.push((parts[0] || '').trim());
+      if (parts.length > 1) right.push(parts.slice(1).join(' ').trim());
     }
-
-    return rawPageText;
+    return `${left.join('\n')}\n\n${right.join('\n')}`;
   }
 
-  /**
-   * Universal Structured Table Extractor
-   * Detects markdown tables, pipe-delimited tables, or aligned tabular data
-   */
   public extractTablesFromText(text: string, pageNumber: number): ExtractedStructuredTable[] {
     const tables: ExtractedStructuredTable[] = [];
     const lines = text.split('\n');
-
-    let inTable = false;
     let tableLines: string[] = [];
-    let tableTitle = '';
+    let title = '';
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
+    const flush = () => {
+      if (tableLines.length >= 2) {
+        const parsed = this.parseTableLines(tableLines, pageNumber, title || `Table on Page ${pageNumber}`);
+        if (parsed) tables.push(parsed);
+      }
+      tableLines = [];
+      title = '';
+    };
 
-      // Look for table indicators: pipe characters or markdown dividers
-      const isPipeTable = (line.match(/\|/g) || []).length >= 2;
-      const isDivider = /^\|?[\s-:]+\|[\s-:]+\|?/.test(line) || /^[-=]{4,}/.test(line);
-
-      if (isPipeTable || (inTable && line.length > 0 && (isDivider || line.includes('\t')))) {
-        if (!inTable) {
-          inTable = true;
-          tableLines = [];
-          // Preceding line may be table title
-          if (i > 0 && lines[i - 1].trim().length > 3 && lines[i - 1].trim().length < 80) {
-            tableTitle = lines[i - 1].trim().replace(/^[#*-]\s*/, '');
-          } else {
-            tableTitle = `Table on Page ${pageNumber}`;
-          }
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index].trim();
+      const pipeCount = (line.match(/\|/g) || []).length;
+      if (pipeCount >= 2) {
+        if (tableLines.length === 0 && index > 0) {
+          const previous = lines[index - 1].trim().replace(/^[#*-]\s*/, '');
+          if (previous && !previous.includes('|') && previous.length < 100) title = previous;
         }
         tableLines.push(line);
-      } else {
-        if (inTable) {
-          if (tableLines.length >= 2) {
-            const parsed = this.parseTableLines(tableLines, pageNumber, tableTitle);
-            if (parsed) tables.push(parsed);
-          }
-          inTable = false;
-          tableLines = [];
-          tableTitle = '';
-        }
+      } else if (tableLines.length > 0) {
+        flush();
       }
     }
+    flush();
 
-    if (inTable && tableLines.length >= 2) {
-      const parsed = this.parseTableLines(tableLines, pageNumber, tableTitle);
-      if (parsed) tables.push(parsed);
-    }
-
-    // Also look for space-aligned or colon-aligned tables (e.g. Robot Specification tables)
-    const specTables = this.detectAlignedSpecTables(text, pageNumber);
-    tables.push(...specTables);
-
+    tables.push(...this.detectAlignedRecords(text, pageNumber));
     return tables;
   }
 
-  /**
-   * Parse collected raw table lines into structured schema and rows
-   */
-  private parseTableLines(
-    lines: string[],
-    pageNumber: number,
-    title: string
-  ): ExtractedStructuredTable | null {
-    const filtered = lines.filter((l) => !/^\|?[\s-:]+\|[\s-:]+\|?/.test(l));
-    if (filtered.length < 2) return null;
+  private parseTableLines(lines: string[], pageNumber: number, title: string): ExtractedStructuredTable | null {
+    const meaningful = lines.filter((line) => !/^\|?\s*:?-{3,}/.test(line));
+    if (meaningful.length < 2) return null;
 
-    // Header line
-    const headerLine = filtered[0];
-    const rawHeaders = headerLine
+    const parseCells = (line: string) => line
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
       .split('|')
-      .map((h) => h.trim())
-      .filter((h) => h.length > 0);
+      .map((cell) => cell.trim());
 
-    if (rawHeaders.length === 0) return null;
-
-    const columns: ParsedTableColumn[] = rawHeaders.map((name) => ({
-      name,
-      type: 'string', // will refine based on rows
-    }));
+    const headers = parseCells(meaningful[0]).filter(Boolean);
+    if (headers.length < 2) return null;
 
     const rows: ParsedTableRow[] = [];
-
-    for (let r = 1; r < filtered.length; r++) {
-      const rowLine = filtered[r];
-      const cells = rowLine
-        .split('|')
-        .map((c) => c.trim())
-        .filter((_, idx, arr) => !(idx === 0 && arr[0] === '') && !(idx === arr.length - 1 && arr[arr.length - 1] === ''));
-
-      if (cells.length === 0) continue;
-
-      const rowObj: ParsedTableRow = {};
-      columns.forEach((col, cIdx) => {
-        const cellVal = cells[cIdx] !== undefined ? cells[cIdx] : '';
-        // Check if numeric
-        const numVal = parseFloat(cellVal.replace(/[,%$]/g, ''));
-        if (!isNaN(numVal) && !isNaN(Number(cellVal.replace(/[,%$]/g, '')))) {
-          rowObj[col.name] = numVal;
-          col.type = 'number';
-        } else {
-          rowObj[col.name] = cellVal;
-        }
+    for (const line of meaningful.slice(1)) {
+      const cells = parseCells(line);
+      if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
+      const row: ParsedTableRow = {};
+      headers.forEach((header, index) => {
+        row[header] = normalizeCell(cells[index] ?? '');
       });
-      rows.push(rowObj);
+      rows.push(row);
     }
+    if (rows.length === 0) return null;
 
-    // Generate clean markdown
-    const mdHeader = `| ${columns.map((c) => c.name).join(' | ')} |`;
-    const mdDivider = `| ${columns.map(() => '---').join(' | ')} |`;
-    const mdRows = rows.map(
-      (r) => `| ${columns.map((c) => String(r[c.name] ?? '')).join(' | ')} |`
-    );
-    const rawMarkdown = [mdHeader, mdDivider, ...mdRows].join('\n');
+    const columns: ParsedTableColumn[] = headers.map((name) => ({
+      name,
+      type: inferColumnType(rows.map((row) => row[name])),
+    }));
+
+    const rawMarkdown = [
+      `| ${headers.join(' | ')} |`,
+      `| ${headers.map(() => '---').join(' | ')} |`,
+      ...rows.map((row) => `| ${headers.map((header) => String(row[header] ?? '')).join(' | ')} |`),
+    ].join('\n');
 
     return {
-      id: `table_p${pageNumber}_${Math.random().toString(36).slice(2, 7)}`,
+      id: `table_p${pageNumber}_${Math.random().toString(36).slice(2, 8)}`,
       pageNumber,
       title,
       columns,
       rows,
       rawMarkdown,
-      summary: `${title} (${rows.length} rows, ${columns.length} columns: ${columns.map((c) => c.name).join(', ')})`,
+      summary: `${title} (${rows.length} rows, ${columns.length} columns: ${headers.join(', ')})`,
     };
   }
 
-  /**
-   * Detect space-aligned, colon-aligned, and domain-structured tables
-   */
-  private detectAlignedSpecTables(text: string, pageNumber: number): ExtractedStructuredTable[] {
-    const tables: ExtractedStructuredTable[] = [];
+  private detectAlignedRecords(text: string, pageNumber: number): ExtractedStructuredTable[] {
+    const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+    const records: ParsedTableRow[] = [];
 
-    // 1. Facility Allocation Table (Page 1)
-    if (text.includes('Singapore Central Logistics Hub') && (text.includes('houses') || text.includes('robots'))) {
-      const facilityRows: ParsedTableRow[] = [];
-      const lines = text.split('\n');
-      lines.forEach((l) => {
-        const m = l.match(/(?:^|\s)(\d+)\.\s+([A-Za-z\s]+Hub|[A-Za-z\s]+Depot|[A-Za-z\s]+Facility):\s+(?:currently\s+)?houses\s+(\d+)\s+active\s+robots/i);
-        if (m) {
-          const name = m[2].trim();
-          const robots = parseInt(m[3], 10);
-          let country = 'Singapore';
-          if (name.includes('Kuala Lumpur')) country = 'Malaysia';
-          if (name.includes('Bangkok')) country = 'Thailand';
-          facilityRows.push({
-            Facility: name,
-            Location: country,
-            'Active Robots': robots,
-            Status: 'Operational',
-          });
-        }
-      });
-
-      if (facilityRows.length >= 2) {
-        tables.push({
-          id: `table_facilities_p${pageNumber}`,
-          pageNumber,
-          title: 'Operational Facilities & Active Fleet Allocation',
-          columns: [
-            { name: 'Facility', type: 'string' },
-            { name: 'Location', type: 'string' },
-            { name: 'Active Robots', type: 'number' },
-            { name: 'Status', type: 'string' },
-          ],
-          rows: facilityRows,
-          rawMarkdown:
-            '| Facility | Location | Active Robots | Status |\n|---|---|---|---|\n' +
-            facilityRows.map((r) => `| ${r['Facility']} | ${r['Location']} | ${r['Active Robots']} | ${r['Status']} |`).join('\n'),
-          summary: `Operational Facilities and fleet counts across ${facilityRows.length} distribution centers`,
-        });
-      }
-    }
-
-    // 2. Robot Models Technical Specifications (Page 2)
-    if (text.includes('AR-10') && (text.includes('Payload') || text.includes('payload'))) {
-      const modelRows: ParsedTableRow[] = [
-        {
-          Model: 'AR-10',
-          Type: 'Light-Duty Courier',
-          'Payload (kg)': 10,
-          'Max Speed (m/s)': 3.2,
-          'Battery (kWh)': 4.0,
-          'Run Time (hrs)': 14,
-        },
-        {
-          Model: 'AR-20',
-          Type: 'Standard Handling',
-          'Payload (kg)': 20,
-          'Max Speed (m/s)': 2.8,
-          'Battery (kWh)': 8.0,
-          'Run Time (hrs)': 13,
-        },
-        {
-          Model: 'AR-40',
-          Type: 'Heavy Transporter',
-          'Payload (kg)': 40,
-          'Max Speed (m/s)': 1.8,
-          'Battery (kWh)': 12.0,
-          'Run Time (hrs)': 10,
-        },
-      ];
-
-      tables.push({
-        id: `table_robot_specs_p${pageNumber}`,
-        pageNumber,
-        title: 'Autonomous Mobile Robot Model Technical Specifications',
-        columns: [
-          { name: 'Model', type: 'string' },
-          { name: 'Type', type: 'string' },
-          { name: 'Payload (kg)', type: 'number' },
-          { name: 'Max Speed (m/s)', type: 'number' },
-          { name: 'Battery (kWh)', type: 'number' },
-          { name: 'Run Time (hrs)', type: 'number' },
-        ],
-        rows: modelRows,
-        rawMarkdown:
-          '| Model | Type | Payload (kg) | Max Speed (m/s) | Battery (kWh) | Run Time (hrs) |\n|---|---|---|---|---|---|\n' +
-          modelRows.map((r) => `| ${r['Model']} | ${r['Type']} | ${r['Payload (kg)']} | ${r['Max Speed (m/s)']} | ${r['Battery (kWh)']} | ${r['Run Time (hrs)']} |`).join('\n'),
-        summary: 'Autonomous Mobile Robot specifications: payload, speed, battery, and operating duration for AR-10, AR-20, and AR-40',
+    for (const line of lines) {
+      const fields = line.split(/\s{3,}|\t+/).map((part) => part.trim()).filter(Boolean);
+      if (fields.length < 3 || fields.length > 8) continue;
+      if (fields.some((field) => field.length > 80)) continue;
+      records.push({
+        Entity: fields[0],
+        Attributes: fields.slice(1).join(' | '),
       });
     }
 
-    // 3. Safety Limits Table (Page 3)
-    if (text.includes('Safety Limits:') || (text.includes('Pedestrian') && text.includes('Emergency Stop'))) {
-      const safetyRows: ParsedTableRow[] = [
-        { Parameter: 'Pedestrian Zone Speed', 'Limit Value': 1.0, Unit: 'm/s', Rule: 'Maximum allowable speed' },
-        { Parameter: 'Emergency Stop Deceleration', 'Limit Value': 4.5, Unit: 'm/s²', Rule: 'Mandatory deceleration rate' },
-        { Parameter: 'Minimum Obstacle Clearance', 'Limit Value': 0.5, Unit: 'meters', Rule: 'Buffer separation distance' },
-        { Parameter: 'Maximum Floor Gradient', 'Limit Value': 3.5, Unit: 'degrees', Rule: '6.1% maximum incline' },
-        { Parameter: 'Safe Battery Discharge', 'Limit Value': 15, Unit: '%', Rule: 'Minimum state of charge' },
-      ];
-
-      tables.push({
-        id: `table_safety_limits_p${pageNumber}`,
-        pageNumber,
-        title: 'Safety Interlocks & Operational Limits',
-        columns: [
-          { name: 'Parameter', type: 'string' },
-          { name: 'Limit Value', type: 'number' },
-          { name: 'Unit', type: 'string' },
-          { name: 'Rule', type: 'string' },
-        ],
-        rows: safetyRows,
-        rawMarkdown:
-          '| Parameter | Limit Value | Unit | Rule |\n|---|---|---|---|\n' +
-          safetyRows.map((r) => `| ${r['Parameter']} | ${r['Limit Value']} | ${r['Unit']} | ${r['Rule']} |`).join('\n'),
-        summary: 'Safety Systems and Operational Limits: speed, deceleration, clearance, gradient, and battery thresholds',
-      });
-    }
-
-    // 4. Pipe-delimited aligned rows
-    const specLines = text
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.includes('|') && (l.includes('AR-') || l.includes('Hub') || l.includes('Model')));
-
-    if (specLines.length >= 2) {
-      const columns: ParsedTableColumn[] = [
-        { name: 'Entity / Model', type: 'string' },
+    if (records.length < 3) return [];
+    return [{
+      id: `table_aligned_p${pageNumber}_${Math.random().toString(36).slice(2, 8)}`,
+      pageNumber,
+      title: `Aligned Records (Page ${pageNumber})`,
+      columns: [
+        { name: 'Entity', type: 'string' },
         { name: 'Attributes', type: 'string' },
-      ];
-      const rows: ParsedTableRow[] = [];
-
-      specLines.forEach((l) => {
-        const parts = l.split('|').map((p) => p.trim());
-        if (parts.length >= 2) {
-          rows.push({
-            'Entity / Model': parts[0],
-            Attributes: parts.slice(1).join(' | '),
-          });
-        }
-      });
-
-      if (rows.length > 0) {
-        tables.push({
-          id: `table_aligned_p${pageNumber}_${Math.random().toString(36).slice(2, 7)}`,
-          pageNumber,
-          title: `Specification Table (Page ${pageNumber})`,
-          columns,
-          rows,
-          rawMarkdown: rows.map((r) => `- **${r['Entity / Model']}**: ${r['Attributes']}`).join('\n'),
-          summary: `Specification Table (${rows.length} records)`,
-        });
-      }
-    }
-
-    return tables;
+      ],
+      rows: records,
+      rawMarkdown: records.map((row) => `- **${row.Entity}**: ${row.Attributes}`).join('\n'),
+      summary: `Aligned Records (${records.length} records)`,
+    }];
   }
 
-  /**
-   * Extract Key-Value Technical Specifications
-   */
   public extractKeyValueSpecs(text: string, pageNumber: number, sectionTitle: string): ExtractedKeyValueSpec[] {
     const specs: ExtractedKeyValueSpec[] = [];
-    const lines = text.split('\n');
+    const regex = /^(?:[*-]\s*)?([A-Za-z0-9][A-Za-z0-9\s/()._\-]{1,50}):\s*(.{1,120})$/;
 
-    // Patterns matching "Key: Value" or "Key - Value"
-    const kvRegex = /^(?:[*-]\s*)?([A-Za-z0-9\s/().-]{3,40}):\s*([A-Za-z0-9\s/°%.,~+-]{1,60})$/;
+    for (const line of text.split('\n')) {
+      const match = line.trim().match(regex);
+      if (!match) continue;
+      const key = match[1].trim();
+      const value = match[2].trim();
+      if (!key || !value || key.toLowerCase().startsWith('http')) continue;
 
-    lines.forEach((line) => {
-      const trimmed = line.trim();
-      const match = trimmed.match(kvRegex);
-      if (match) {
-        const key = match[1].trim();
-        const value = match[2].trim();
-
-        // Skip obvious sentences or headers
-        if (key.length > 35 || value.length > 60 || key.includes('http') || key.startsWith('Section')) {
-          return;
-        }
-
-        // Extract numeric and unit if applicable
-        const numMatch = value.match(/^([+-]?\d+(?:\.\d+)?)\s*([A-Za-z°/%]+)?/);
-        let numericValue: number | undefined;
-        let unit: string | undefined;
-
-        if (numMatch) {
-          const parsed = parseFloat(numMatch[1]);
-          if (!isNaN(parsed)) {
-            numericValue = parsed;
-            unit = numMatch[2] || undefined;
-          }
-        }
-
-        specs.push({
-          key,
-          value,
-          numericValue,
-          unit,
-          pageNumber,
-          sectionTitle,
-        });
-      }
-    });
+      const numericMatch = value.match(/^([+-]?\d+(?:\.\d+)?)\s*([A-Za-z°/%²³$]+)?/);
+      const numericValue = numericMatch ? Number.parseFloat(numericMatch[1]) : undefined;
+      specs.push({
+        key,
+        value,
+        numericValue: numericValue !== undefined && Number.isFinite(numericValue) ? numericValue : undefined,
+        unit: numericMatch?.[2],
+        pageNumber,
+        sectionTitle,
+      });
+    }
 
     return specs;
   }

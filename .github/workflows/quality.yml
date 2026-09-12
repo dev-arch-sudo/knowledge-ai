@@ -9,7 +9,7 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -31,3 +31,6 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Unseen-corpus effectiveness benchmark
+        run: npm run benchmark:unseen

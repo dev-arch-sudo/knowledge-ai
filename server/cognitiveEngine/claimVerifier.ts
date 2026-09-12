@@ -2,9 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Phase 10 Claim Verifier & Grounding Validator
- * Decomposes answers into claims, verifies against authoritative chunks,
- * detects contradictions, checks temporal alignment, and validates citations.
+ * Generic claim verifier for evidence-grounded answers.
  */
 
 import { Citation } from '../../src/types.js';
@@ -14,10 +12,74 @@ import {
   QuestionUnderstandingProfile,
 } from './types.js';
 
+const STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'into', 'than', 'are', 'was', 'were',
+  'has', 'have', 'had', 'its', 'their', 'there', 'based', 'according', 'document', 'documents',
+]);
+
+function tokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9%.-\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2 && !STOP_WORDS.has(token));
+}
+
+function numbers(text: string): string[] {
+  return text.match(/-?\b\d+(?:\.\d+)?\b/g) || [];
+}
+
+function numericValues(text: string): number[] {
+  return Array.from(new Set(numbers(text).map(Number).filter(Number.isFinite)));
+}
+
+function approximatelyEqual(a: number, b: number): boolean {
+  return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b));
+}
+
+function canDeriveFromEvidence(target: number, evidenceValues: number[]): boolean {
+  const values = Array.from(new Set(evidenceValues)).slice(0, 12);
+  if (values.some((value) => approximatelyEqual(value, target))) return true;
+
+  for (let i = 0; i < values.length; i++) {
+    for (let j = i + 1; j < values.length; j++) {
+      const a = values[i];
+      const b = values[j];
+      if (approximatelyEqual(a + b, target)) return true;
+      if (approximatelyEqual(Math.abs(a - b), target)) return true;
+      if (b !== 0 && approximatelyEqual(a / b, target)) return true;
+      if (a !== 0 && approximatelyEqual(b / a, target)) return true;
+    }
+  }
+
+  // Bounded subset-sum support for deterministic table totals.
+  const subsetValues = values.slice(0, 8);
+  const combinations = 1 << subsetValues.length;
+  for (let mask = 1; mask < combinations; mask++) {
+    let sum = 0;
+    for (let i = 0; i < subsetValues.length; i++) {
+      if (mask & (1 << i)) sum += subsetValues[i];
+    }
+    if (approximatelyEqual(sum, target)) return true;
+  }
+
+  return false;
+}
+
+function isRefusal(text: string): boolean {
+  const lower = text.toLowerCase();
+  return [
+    'not enough evidence',
+    'insufficient evidence',
+    "couldn't find enough evidence",
+    'cannot answer',
+    'not documented',
+    'not present in the uploaded documents',
+    'cannot follow instructions that attempt to bypass',
+  ].some((phrase) => lower.includes(phrase));
+}
+
 export class ClaimVerificationEngine {
-  /**
-   * Decompose answer text into claims and verify against reranked evidence
-   */
   public verifyAnswerClaims(
     answerText: string,
     evidenceChunks: HierarchicalChunk[],
@@ -29,113 +91,107 @@ export class ClaimVerificationEngine {
     contradictionsFound: number;
     citations: Citation[];
   } {
-    // 1. Break answer into sentences / candidate claims
-    const rawSentences = answerText
-      .split(/(?<=[.!?])\s+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 5);
+    const sentences = answerText
+      .split(/(?<=[.!?])\s+|\n{2,}/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 5);
 
     const claims: ClaimVerificationItem[] = [];
-    const citations: Citation[] = [];
+    const citationMap = new Map<string, Citation>();
+    const allEvidenceNumbers = evidenceChunks.flatMap((chunk) => numericValues(chunk.text));
     let contradictionsFound = 0;
 
-    for (let i = 0; i < rawSentences.length; i++) {
-      const sentence = rawSentences[i];
-      const claimId = `claim_${i + 1}`;
-      const sLower = sentence.toLowerCase();
+    for (let index = 0; index < sentences.length; index++) {
+      const sentence = sentences[index];
+      const sentenceTokens = tokens(sentence);
+      const sentenceNumbers = numericValues(sentence);
+      let bestChunk: HierarchicalChunk | undefined;
+      let bestOverlap = 0;
 
-      let isSupported = false;
-      let supportingChunkIds: string[] = [];
-      let contradictedByChunkIds: string[] = [];
-      let explanation = '';
-
-      // Check evidence support
       for (const chunk of evidenceChunks) {
-        const cLower = chunk.text.toLowerCase();
-
-        // Check if key numbers and nouns in sentence exist in chunk
-        const numsInSentence = sentence.match(/\b\d+(\.\d+)?\b/g) || [];
-        let numMatch = true;
-        if (numsInSentence.length > 0) {
-          numMatch = numsInSentence.every((n) => chunk.text.includes(n));
-        }
-
-        // Entity check
-        let entityMatch = false;
-        for (const ent of chunk.entities) {
-          if (sentence.includes(ent)) entityMatch = true;
-        }
-
-        if ((numMatch && numsInSentence.length > 0) || (entityMatch && cLower.includes(sLower.slice(0, 30)))) {
-          isSupported = true;
-          supportingChunkIds.push(chunk.chunkId);
-          explanation = `Directly verified against ${chunk.documentName} (Page ${chunk.pageNumber}, ${chunk.sectionTitle})`;
-
-          // Add citation
-          if (!citations.some((c) => c.documentId === chunk.documentId && c.pageNumber === chunk.pageNumber)) {
-            citations.push({
-              documentId: chunk.documentId,
-              documentName: chunk.documentName,
-              pageNumber: chunk.pageNumber,
-              snippet: chunk.text.slice(0, 220) + '...',
-            });
-          }
+        const chunkLower = chunk.text.toLowerCase();
+        const overlap = sentenceTokens.length
+          ? sentenceTokens.filter((token) => chunkLower.includes(token)).length / sentenceTokens.length
+          : 1;
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestChunk = chunk;
         }
       }
 
-      // Check for contradiction against authoritative knowledge
-      // e.g. If user asserted 500, but document says 300, confirm 500 is NOT claimed
-      if (profile.userCorrectionAssertion && sentence.includes(profile.userCorrectionAssertion)) {
-        if (!sentence.includes('contrary') && !sentence.includes('incorrect') && !sentence.includes('not')) {
-          contradictionsFound++;
-          isSupported = false;
-          explanation = `Contradicts authoritative document which establishes official fleet count as 300.`;
-        }
-      }
+      const numbersSupported = sentenceNumbers.length === 0 || sentenceNumbers.every((value) =>
+        canDeriveFromEvidence(value, allEvidenceNumbers)
+      );
+      const refusal = isRefusal(sentence);
+      const supported = refusal
+        ? true
+        : Boolean(bestChunk) && numbersSupported && bestOverlap >= 0.4;
 
-      // If sentence is a refusal/abstention
       if (
-        sLower.includes('not announced') ||
-        sLower.includes('have not been announced') ||
-        sLower.includes('cannot answer') ||
-        sLower.includes('insufficient evidence') ||
-        sLower.includes('does not contain') ||
-        sLower.includes('strictly adheres to security boundaries')
+        profile.userCorrectionAssertion &&
+        sentence.includes(profile.userCorrectionAssertion) &&
+        !/\b(not|incorrect|wrong|rather than|instead)\b/i.test(sentence)
       ) {
-        isSupported = true;
-        explanation = 'Correctly abstained / refused based on evidence boundaries.';
+        contradictionsFound += 1;
+      }
+
+      const supportingChunkIds = supported && !refusal
+        ? evidenceChunks
+            .filter((chunk) => sentenceTokens.some((token) => chunk.text.toLowerCase().includes(token)))
+            .slice(0, 3)
+            .map((chunk) => chunk.chunkId)
+        : [];
+
+      if (supported && !refusal) {
+        const supporting = evidenceChunks
+          .filter((chunk) => supportingChunkIds.includes(chunk.chunkId))
+          .slice(0, 3);
+        for (const chunk of supporting.length ? supporting : (bestChunk ? [bestChunk] : [])) {
+          const key = `${chunk.documentId}:${chunk.pageNumber}:${chunk.chunkId}`;
+          citationMap.set(key, {
+            documentId: chunk.documentId,
+            documentName: chunk.documentName,
+            pageNumber: chunk.pageNumber,
+            sectionHeading: chunk.sectionTitle,
+            snippet: chunk.text.slice(0, 240),
+          });
+        }
       }
 
       claims.push({
-        claimId,
+        claimId: `claim_${index + 1}`,
         claimText: sentence,
-        isSupported,
-        confidence: isSupported ? 0.98 : 0.2,
+        isSupported: supported,
+        confidence: supported ? Math.min(0.99, 0.65 + bestOverlap * 0.3) : Math.max(0.1, bestOverlap * 0.4),
         supportingChunkIds,
-        contradictedByChunkIds,
-        explanation: explanation || 'Supported by retrieved knowledge context',
+        contradictedByChunkIds: [],
+        explanation: refusal
+          ? 'The answer abstains rather than introducing an unsupported factual claim.'
+          : supported && numbersSupported
+            ? 'Supported by retrieved document evidence; any derived numeric result is reproducible from grounded operands.'
+            : 'No retrieved evidence sufficiently supports this claim.',
         temporalStatus: 'ALIGNED',
       });
     }
 
-    const supportedCount = claims.filter((c) => c.isSupported).length;
-    const groundingScore = claims.length > 0 ? Math.round((supportedCount / claims.length) * 100) : 100;
-    const allClaimsSupported = supportedCount === claims.length;
+    const supportedCount = claims.filter((claim) => claim.isSupported).length;
+    const groundingScore = claims.length ? supportedCount / claims.length : 1;
+    const citations = Array.from(citationMap.values());
 
-    // Fallback citation if none added yet and chunks exist
-    if (citations.length === 0 && evidenceChunks.length > 0 && !profile.isOutOfDomain && !profile.isAdversarial) {
-      const topChunk = evidenceChunks[0];
+    if (citations.length === 0 && evidenceChunks.length > 0 && !isRefusal(answerText) && !profile.isAdversarial) {
+      const top = evidenceChunks[0];
       citations.push({
-        documentId: topChunk.documentId,
-        documentName: topChunk.documentName,
-        pageNumber: topChunk.pageNumber,
-        snippet: topChunk.text.slice(0, 200) + '...',
+        documentId: top.documentId,
+        documentName: top.documentName,
+        pageNumber: top.pageNumber,
+        sectionHeading: top.sectionTitle,
+        snippet: top.text.slice(0, 240),
       });
     }
 
     return {
       claims,
-      allClaimsSupported,
+      allClaimsSupported: supportedCount === claims.length && contradictionsFound === 0,
       groundingScore,
       contradictionsFound,
       citations,
