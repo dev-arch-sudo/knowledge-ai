@@ -34,6 +34,7 @@ import { knowledgeGraphEngine } from './knowledgeGraphEngine.js';
 import { tableArithmeticEngine, ArithmeticExecutionResult } from './tableArithmeticEngine.js';
 import { correctiveRagEngine, CorrectiveRagAssessment } from './correctiveRagEngine.js';
 import { phase95RagSubordinateModule, Phase95RagSubordinateModule } from './phase95SubordinateModule.js';
+import { deterministicSynthesizer } from './deterministicSynthesizer.js';
 import { tenantGovernanceService } from '../mediator/tenantGovernanceService.js';
 import { quotaAndBillingService } from '../mediator/quotaAndBillingService.js';
 import { multilingualEngine } from './multilingualEngine.js';
@@ -448,11 +449,7 @@ export class KnowledgeCognitiveEngine {
 
     const evidence = rerankedItems.slice(0, 6);
     const deterministicFallback = () => ({
-      answer: evidence
-        .slice(0, 3)
-        .map((item) => item.chunk.text.trim())
-        .filter(Boolean)
-        .join('\n\n'),
+      answer: deterministicSynthesizer(profile, evidence),
       engineUsed: 'cognitive-deterministic-engine' as const,
     });
 

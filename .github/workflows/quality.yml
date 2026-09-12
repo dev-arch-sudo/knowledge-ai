@@ -35,6 +35,9 @@ jobs:
       - name: Arithmetic grounding proof guard
         run: npx tsx scripts/check-arithmetic-grounding.ts
 
+      - name: Deterministic synthesis guard
+        run: npx tsx scripts/check-deterministic-synthesis.ts
+
       - name: Unseen-corpus effectiveness benchmark
         run: npm run benchmark:unseen
 
