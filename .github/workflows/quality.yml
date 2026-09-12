@@ -1,0 +1,53 @@
+name: Quality Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Benchmark leakage guard
+        run: npm run check:benchmark-leakage
+
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Arithmetic grounding proof guard
+        run: npx tsx scripts/check-arithmetic-grounding.ts
+
+      - name: Deterministic synthesis guard
+        run: npx tsx scripts/check-deterministic-synthesis.ts
+
+      - name: Unseen-corpus effectiveness benchmark
+        run: npm run benchmark:unseen
+
+      - name: Live Gemini unseen-corpus benchmark
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "LIVE_GEMINI_BENCHMARK_SKIPPED: GEMINI_API_KEY repository secret is not configured."
+            exit 0
+          fi
+          npm run benchmark:unseen:gemini

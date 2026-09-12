@@ -1,6 +1,14 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * Provider simulation harness used by mediator reliability tests.
+ *
+ * IMPORTANT: this module does not make live provider API calls. It produces
+ * deterministic/simulated provider responses for orchestration, budget,
+ * failover, and telemetry tests. Live model generation currently happens in
+ * the grounded/cognitive Gemini paths. Do not present data from this adapter
+ * as empirically measured production-provider performance.
  */
 
 import crypto from 'crypto';
@@ -9,9 +17,8 @@ import {
   RealProviderBudget,
   RealProviderBudgetStatus,
   ExecutionEnvironment,
-  OperationalValidationStatus,
 } from './phase8Types.js';
-import { AgentClaim, ProvenanceTrace, FaultInjectionMode } from './types.js';
+import { AgentClaim, ProvenanceTrace } from './types.js';
 
 export interface ProviderExecutionRequest {
   providerId: string;
@@ -56,7 +63,7 @@ export class RealProviderAdapter {
   }
 
   private initDefaultHealthProfiles() {
-    // 1. Google Gemini Provider
+    // These are simulation fixtures, not observed production-provider metrics.
     this.healthProfiles.set('provider-gemini', {
       providerId: 'provider-gemini',
       modelId: 'gemini-2.5-flash',
@@ -70,10 +77,9 @@ export class RealProviderAdapter {
       tokenUsage: { inputTokens: 45200, outputTokens: 18400, totalTokens: 63600 },
       rateLimitEvents: 0,
       status: 'HEALTHY',
-      validationSource: 'EMPIRICALLY_MEASURED' as any,
+      validationSource: 'SIMULATED',
     });
 
-    // 2. Vertex AI Enterprise Endpoint
     this.healthProfiles.set('provider-vertex', {
       providerId: 'provider-vertex',
       modelId: 'gemini-1.5-pro-enterprise',
@@ -87,10 +93,9 @@ export class RealProviderAdapter {
       tokenUsage: { inputTokens: 28000, outputTokens: 9100, totalTokens: 37100 },
       rateLimitEvents: 0,
       status: 'HEALTHY',
-      validationSource: 'EMPIRICALLY_MEASURED' as any,
+      validationSource: 'SIMULATED',
     });
 
-    // 3. Fallback High-Availability Cluster
     this.healthProfiles.set('provider-ha-cluster', {
       providerId: 'provider-ha-cluster',
       modelId: 'claude-3-5-sonnet-compat',
@@ -109,18 +114,17 @@ export class RealProviderAdapter {
   }
 
   /**
-   * Execute real provider or bounded real-provider test with strict budget limits,
-   * rate-limiting handling, failover, and secret redacting.
+   * Execute the provider simulation harness with bounded budgets, synthetic
+   * failover behavior, secret-safe provenance, and clearly simulated metrics.
    */
   public async execute(req: ProviderExecutionRequest): Promise<ProviderExecutionResponse> {
     const startTime = Date.now();
     const env = req.environment || 'DETERMINISTIC_TEST';
     const providerId = req.providerId || 'provider-gemini';
     const modelId = req.modelId || 'gemini-2.5-flash';
-    const modelVersion = req.modelVersion || 'v2.5-2026-03';
-    const configurationVersion = req.configurationVersion || 'cfg_v1.4';
+    const modelVersion = req.modelVersion || 'simulation-v1';
+    const configurationVersion = req.configurationVersion || 'simulation-cfg-v1';
 
-    // 1. Check budget if real provider test or production
     const budgetKey = `${req.runId}_${providerId}`;
     let budgetStatus = this.activeBudgets.get(budgetKey);
     if (!budgetStatus && req.budget) {
@@ -137,7 +141,7 @@ export class RealProviderAdapter {
         usedTokens: 0,
         elapsedTimeMs: 0,
         usedCostUnits: 0,
-        costReported: 'UNKNOWN', // Invariant: Never invent monetary cost
+        costReported: 'UNKNOWN',
         limitReached: false,
         status: 'WITHIN_BUDGET',
       };
@@ -160,7 +164,7 @@ export class RealProviderAdapter {
           latencyMs: Date.now() - startTime,
           tokensUsed: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
           costReported: 'UNKNOWN',
-          errorDetails: 'BUDGET_LIMIT_REACHED: Max requests quota exceeded for test run.',
+          errorDetails: 'BUDGET_LIMIT_REACHED: Max requests quota exceeded for simulated test run.',
         };
       }
       budgetStatus.usedRequests += 1;
@@ -169,7 +173,6 @@ export class RealProviderAdapter {
     }
 
     try {
-      // 2. Enforce provider failover if requested or if primary provider is down
       let activeProvider = providerId;
       let failoverEngaged = false;
 
@@ -178,10 +181,7 @@ export class RealProviderAdapter {
         failoverEngaged = true;
       }
 
-      // Generate unique provider-level request id
-      const providerRequestId = `prv_req_${crypto.randomBytes(8).toString('hex')}`;
-
-      // Simulate token computation
+      const providerRequestId = `sim_req_${crypto.randomBytes(8).toString('hex')}`;
       const promptTokenEstimate = Math.ceil(req.taskPrompt.length / 4);
       const outputTokenEstimate = 85;
       const totalTokens = promptTokenEstimate + outputTokenEstimate;
@@ -190,32 +190,22 @@ export class RealProviderAdapter {
         budgetStatus.usedTokens += totalTokens;
       }
 
-      // Build structured claims and provenance
       const claims: AgentClaim[] = [
         {
           id: `claim_${crypto.randomBytes(6).toString('hex')}`,
           subtaskId: req.subtaskId,
           agentId: `agent-${activeProvider}`,
-          claimText: `Telemetry verified: Response synthesized from ${activeProvider} under ${env}.`,
-          text: `Telemetry verified: Response synthesized from ${activeProvider} under ${env}.`,
+          claimText: `[SIMULATED] Orchestration response produced for ${activeProvider} under ${env}.`,
+          text: `[SIMULATED] Orchestration response produced for ${activeProvider} under ${env}.`,
           confidence: 0.94,
           groundingStatus: 'UNVERIFIED',
           supportingCitations: [],
           systemAsserted: false,
-          sources: [
-            {
-              documentId: 'doc_standard_telemetry',
-              chunkIndex: 0,
-              confidence: 0.95,
-              matchText: 'System operational parameters validated.',
-            },
-          ],
+          sources: [],
         } as any,
       ];
 
       const latencyMs = Math.floor(Math.random() * 25) + 30;
-
-      // Update provider health profile
       const profile = this.healthProfiles.get(activeProvider);
       if (profile) {
         profile.lastSuccessfulRequest = Date.now();
@@ -231,7 +221,7 @@ export class RealProviderAdapter {
         modelVersion,
         configurationVersion,
         claims,
-        rawOutput: `Synthesized analysis by ${activeProvider} (${modelId}) under environment ${env}.`,
+        rawOutput: `[SIMULATED] Provider response for ${activeProvider} (${modelId}) under environment ${env}.`,
         provenance: this.generateProvenance(req, activeProvider, modelId),
         latencyMs,
         tokensUsed: {
@@ -239,7 +229,7 @@ export class RealProviderAdapter {
           outputTokens: outputTokenEstimate,
           totalTokens,
         },
-        costReported: 'UNKNOWN', // Strictly UNKNOWN when live pricing API is not connected
+        costReported: 'UNKNOWN',
         failoverEngaged,
         providerRequestId,
       };

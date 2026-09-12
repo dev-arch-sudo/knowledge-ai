@@ -2,14 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Phase 9.5 Dedicated Conversational Query Resolution Engine
- * Inspired by RAGFlow, LlamaIndex CondenseQuestionEngine, and Haystack QueryReformulator.
- *
- * Ensures:
- * 1. Follow-up queries with pronouns ("those", "it", "its", "that") are contextualized
- *    into self-contained retrieval queries preserving subject, entity, and domain intent.
- * 2. Conversational history does NOT replace the query or inject previous assistant answers as evidence.
- * 3. Fresh retrieval is executed on every single conversational turn.
+ * Corpus-agnostic conversational query resolution.
+ * Resolves follow-up pronouns from recent conversation context without
+ * injecting domain-specific entities or treating prior assistant text as evidence.
  */
 
 import { ChatMessage } from '../src/types.js';
@@ -25,210 +20,115 @@ export interface QueryResolutionResult {
   resolutionExplanation: string;
 }
 
-// Known entity keywords for fast disambiguation
-const KNOWN_MODELS = ['AR-40', 'AR-20', 'AR-10', 'Apex-1000'];
-const KNOWN_LOCATIONS = ['Singapore Central', 'Singapore North', 'Kuala Lumpur', 'Bangkok', 'Zone 4'];
+function extractEntities(text: string): string[] {
+  const entities = new Set<string>();
+  const codes = text.match(/\b[A-Z]{2,}[A-Z0-9\-]*\d+[A-Z0-9\-]*\b/g) || [];
+  codes.forEach((value) => entities.add(value));
 
-/**
- * Extracts candidate entities from previous user questions and assistant responses
- */
-function extractRecentContextEntities(history: ChatMessage[]): {
-  lastModel?: string;
-  lastLocation?: string;
-  lastTopic?: string;
-  allMentionedModels: string[];
-} {
-  const allMentionedModels: string[] = [];
-  let lastModel: string | undefined;
-  let lastLocation: string | undefined;
-  let lastTopic: string | undefined;
-
-  // Scan recent history in reverse
-  const recent = history.slice(-6).reverse();
-  for (const msg of recent) {
-    const text = msg.content || (msg as any).text || '';
-    if (!text) continue;
-    const textUpper = text.toUpperCase();
-
-    // Check models
-    for (const m of KNOWN_MODELS) {
-      if (textUpper.includes(m.toUpperCase())) {
-        if (!lastModel) lastModel = m;
-        if (!allMentionedModels.includes(m)) allMentionedModels.push(m);
-      }
-    }
-
-    // Check locations
-    for (const loc of KNOWN_LOCATIONS) {
-      if (text.toLowerCase().includes(loc.toLowerCase())) {
-        if (!lastLocation) lastLocation = loc;
-      }
-    }
-
-    // Check topics
-    if (!lastTopic) {
-      const lower = text.toLowerCase();
-      if (lower.includes('robot') || lower.includes('fleet')) lastTopic = 'fleet';
-      else if (lower.includes('warehouse')) lastTopic = 'warehouses';
-      else if (lower.includes('payload')) lastTopic = 'payload';
-      else if (lower.includes('speed')) lastTopic = 'speed';
-      else if (lower.includes('battery')) lastTopic = 'battery';
-      else if (lower.includes('pressure') || lower.includes('psi')) lastTopic = 'pressure';
-      else if (lower.includes('maintenance')) lastTopic = 'maintenance';
+  const properRuns = text.match(/\b(?:[A-Z][A-Za-z0-9&'\-]*)(?:\s+[A-Z][A-Za-z0-9&'\-]*){0,4}\b/g) || [];
+  for (const value of properRuns) {
+    const cleaned = value.trim();
+    if (cleaned.length >= 3 && !/^(What|When|Where|Which|Who|Why|How|Tell|Compare|Does|Do|Is|Are|Can|Could|Would|Please)$/i.test(cleaned)) {
+      entities.add(cleaned);
     }
   }
-
-  return { lastModel, lastLocation, lastTopic, allMentionedModels };
+  return Array.from(entities).slice(0, 20);
 }
 
-/**
- * Resolves a user's question within the conversational context
- */
+function recentUserContext(history: ChatMessage[], currentQuestion: string): string[] {
+  return history
+    .filter((message) => message.role === 'user')
+    .map((message) => (message.content || '').trim())
+    .filter((text) => text && text !== currentQuestion)
+    .slice(-6);
+}
+
+function chooseAntecedent(history: ChatMessage[], currentQuestion: string): string | undefined {
+  const userTurns = recentUserContext(history, currentQuestion).reverse();
+  for (const turn of userTurns) {
+    const entities = extractEntities(turn);
+    if (entities.length > 0) return entities[0];
+
+    const nounPhraseMatch = turn.match(/(?:about|for|of|is|are|does|do)\s+(?:the\s+)?([a-z0-9][a-z0-9\-]*(?:\s+[a-z0-9][a-z0-9\-]*){0,4})(?:[?.!,]|$)/i);
+    if (nounPhraseMatch) {
+      const phrase = nounPhraseMatch[1].trim();
+      if (phrase.length >= 3) return phrase;
+    }
+  }
+  return undefined;
+}
+
 export function resolveConversationalQuery(
   question: string,
   chatHistory: ChatMessage[] = []
 ): QueryResolutionResult {
   const trimmed = question.trim();
-  const qLower = trimmed.toLowerCase();
+  const lower = trimmed.toLowerCase();
+  const antecedent = chooseAntecedent(chatHistory, trimmed);
 
-  // Filter valid previous user/assistant turns (excluding current question if already appended)
-  const priorHistory = chatHistory.filter((msg) => {
-    const text = (msg.content || (msg as any).text || '').trim();
-    return text.length > 0 && text !== trimmed;
-  });
-  const context = extractRecentContextEntities(priorHistory);
+  const correctionIntent = [
+    'actually report',
+    'actually state',
+    'is that previous answer correct',
+    'verify that from the document',
+    'check that against the document',
+    'what does the document actually say',
+  ].some((phrase) => lower.includes(phrase));
 
-  // 1. Correction query detection (Section 16: Previous Answer Correction Test)
-  // e.g., "How many active robots does the document actually report?", "Is that actually in the document?"
-  if (
-    qLower.includes('actually report') ||
-    qLower.includes('actually state') ||
-    qLower.includes('in the document actually') ||
-    qLower.includes('is that previous answer correct') ||
-    qLower.includes('verify that from the document')
-  ) {
-    let rewritten = trimmed;
-    if (qLower.includes('robot')) {
-      rewritten = 'How many currently active robots does Aurora Robotics operate according to the document?';
-    } else if (context.lastModel) {
-      rewritten = `What does the document state about ${context.lastModel}?`;
-    }
+  if (correctionIntent) {
+    const rewritten = antecedent
+      ? `What do the uploaded documents state about ${antecedent}?`
+      : trimmed;
     return {
       originalQuestion: trimmed,
       contextualizedQuery: rewritten,
       queryType: 'CORRECTION_QUERY',
-      resolvedEntities: context.lastModel ? [context.lastModel] : ['Aurora Robotics'],
+      resolvedEntities: antecedent ? [antecedent] : [],
       isFollowUp: true,
-      resolutionExplanation: 'Detected previous answer correction query; resetting evidence scope to authoritative document truth.',
+      resolutionExplanation: antecedent
+        ? `Re-grounded the correction query on the recent user-mentioned entity: ${antecedent}.`
+        : 'Detected a correction/verification query and preserved it for fresh retrieval.',
     };
   }
 
-  // 2. Specific 8-turn sequence reference resolutions & general pronoun resolution
-  // Turn 2: "How many of those are AR-40?"
-  if (
-    (qLower.includes('of those') || qLower.includes('of them')) &&
-    (qLower.includes('ar-40') || qLower.includes('ar-10') || qLower.includes('ar-20'))
-  ) {
-    const targetModel = qLower.includes('ar-40') ? 'AR-40' : (qLower.includes('ar-10') ? 'AR-10' : 'AR-20');
-    return {
-      originalQuestion: trimmed,
-      contextualizedQuery: `How many ${targetModel} robots are active in the fleet of 300 active robots?`,
-      queryType: 'FOLLOW_UP_QUERY',
-      resolvedEntities: [targetModel, '300 active robots'],
-      isFollowUp: true,
-      resolutionExplanation: `Resolved pronoun "those" to active robot fleet for model ${targetModel}.`,
-    };
-  }
-
-  // Follow-up: "What is its maximum speed?" / "What is its speed?"
-  if (
-    (qLower.includes('its maximum speed') || qLower.includes('its speed') || qLower.startsWith('what is its speed')) &&
-    !KNOWN_MODELS.some((m) => qLower.includes(m.toLowerCase()))
-  ) {
-    const model = context.lastModel || 'AR-40';
-    return {
-      originalQuestion: trimmed,
-      contextualizedQuery: `What is the maximum speed of the ${model} robot?`,
-      queryType: 'FOLLOW_UP_QUERY',
-      resolvedEntities: [model, 'maximum speed'],
-      isFollowUp: true,
-      resolutionExplanation: `Resolved pronoun "its" to active antecedent model ${model}.`,
-    };
-  }
-
-  // Follow-up: "What is its battery capacity?" / "What is its battery?"
-  if (
-    (qLower.includes('its battery') || qLower.includes('its capacity') || qLower.startsWith('what is its battery')) &&
-    !KNOWN_MODELS.some((m) => qLower.includes(m.toLowerCase()))
-  ) {
-    const model = context.lastModel || 'AR-40';
-    return {
-      originalQuestion: trimmed,
-      contextualizedQuery: `What is the battery capacity of the ${model} robot?`,
-      queryType: 'FOLLOW_UP_QUERY',
-      resolvedEntities: [model, 'battery capacity'],
-      isFollowUp: true,
-      resolutionExplanation: `Resolved pronoun "its" to active antecedent model ${model}.`,
-    };
-  }
-
-  // Follow-up: "How long does it operate?" / "How long does the AR-40 operate?"
-  if (
-    (qLower.includes('how long does it operate') || qLower.includes('how long does the ar-40 operate') || qLower.includes('operating time')) &&
-    !qLower.includes('continuous operating hours')
-  ) {
-    const model = (qLower.includes('ar-40') ? 'AR-40' : (qLower.includes('ar-20') ? 'AR-20' : (qLower.includes('ar-10') ? 'AR-10' : context.lastModel || 'AR-40')));
-    return {
-      originalQuestion: trimmed,
-      contextualizedQuery: `How long is the continuous operating time of the ${model} robot on a full charge?`,
-      queryType: 'FOLLOW_UP_QUERY',
-      resolvedEntities: [model, 'operating time'],
-      isFollowUp: true,
-      resolutionExplanation: `Contextualized operating duration query with exact model ${model}.`,
-    };
-  }
-
-  // Turn 8 / Warehouse superlative query: "Which warehouse has the most robots?"
-  if (
-    qLower.includes('which warehouse') &&
-    (qLower.includes('most robot') || qLower.includes('highest') || qLower.includes('largest'))
-  ) {
-    return {
-      originalQuestion: trimmed,
-      contextualizedQuery: 'Which operational warehouse facility has the largest number of active robots and what is its allocation?',
-      queryType: 'CONTEXT_DEPENDENT_QUERY',
-      resolvedEntities: ['Singapore Central', 'warehouses', 'active robots'],
-      isFollowUp: true,
-      resolutionExplanation: 'Expanded warehouse superlative question to target facility name and exact allocation numbers.',
-    };
-  }
-
-  // General pronominal check: "it", "its", "they", "those", "that"
-  const hasPronoun = /\b(it|its|they|those|these|that|this model|that unit)\b/i.test(trimmed);
-  if (hasPronoun && priorHistory.length > 0 && context.lastModel) {
-    // Replace pronoun with concrete model name
+  const hasPronoun = /\b(it|its|they|them|their|those|these|that one|this one|that item|this item|that product|this product|that policy|this policy|that office|this office)\b/i.test(trimmed);
+  if (hasPronoun && antecedent) {
+    const possessive = `${antecedent}'s`;
     const rewritten = trimmed
-      .replace(/\b(it|this model|that unit)\b/gi, `the ${context.lastModel}`)
-      .replace(/\b(its)\b/gi, `${context.lastModel}'s`)
-      .replace(/\b(those|they)\b/gi, `${context.lastModel} units`);
+      .replace(/\b(its|their)\b/gi, possessive)
+      .replace(/\b(it|them|they|those|these|that one|this one|that item|this item|that product|this product|that policy|this policy|that office|this office)\b/gi, antecedent);
 
     return {
       originalQuestion: trimmed,
       contextualizedQuery: rewritten,
       queryType: 'FOLLOW_UP_QUERY',
-      resolvedEntities: [context.lastModel],
+      resolvedEntities: [antecedent],
       isFollowUp: true,
-      resolutionExplanation: `Replaced ambiguous pronouns with antecedent entity ${context.lastModel}.`,
+      resolutionExplanation: `Resolved conversational pronoun to recent user-mentioned entity: ${antecedent}.`,
     };
   }
 
-  // Direct, self-contained query
+  const elliptical = /^(and |what about |how about |what is the |what are the |how many |where is |when is |who is )/i.test(trimmed);
+  if (elliptical && antecedent && recentUserContext(chatHistory, trimmed).length > 0) {
+    const alreadyMentionsAntecedent = lower.includes(antecedent.toLowerCase());
+    const rewritten = alreadyMentionsAntecedent ? trimmed : `${trimmed} for ${antecedent}`;
+    return {
+      originalQuestion: trimmed,
+      contextualizedQuery: rewritten,
+      queryType: 'CONTEXT_DEPENDENT_QUERY',
+      resolvedEntities: [antecedent],
+      isFollowUp: true,
+      resolutionExplanation: `Expanded an elliptical follow-up using recent user context: ${antecedent}.`,
+    };
+  }
+
+  const directEntities = extractEntities(trimmed);
   return {
     originalQuestion: trimmed,
     contextualizedQuery: trimmed,
     queryType: 'DIRECT_QUERY',
-    resolvedEntities: context.allMentionedModels.length > 0 ? context.allMentionedModels : ['General'],
+    resolvedEntities: directEntities,
     isFollowUp: false,
-    resolutionExplanation: 'Direct standalone query; no pronominal or elliptical references detected.',
+    resolutionExplanation: 'Direct standalone query; no conversational dependency detected.',
   };
 }
