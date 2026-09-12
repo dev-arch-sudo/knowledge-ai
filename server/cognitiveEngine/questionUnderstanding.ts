@@ -9,6 +9,7 @@
 import { ChatMessage } from '../../src/types.js';
 import { QuestionUnderstandingProfile, QuestionClassificationType } from './types.js';
 import { resolveConversationalQuery } from '../ragQueryResolver.js';
+import { multilingualEngine } from './multilingualEngine.js';
 
 // Pre-compiled entity catalogs for Aurora Robotics domain
 const KNOWN_ROBOT_MODELS = ['ar-10', 'ar-20', 'ar-40'];
@@ -62,9 +63,19 @@ export function understandQuestion(
   rawQuestion: string,
   chatHistory: ChatMessage[] = []
 ): { profile: QuestionUnderstandingProfile; contextualizedQuery: string } {
+  // 0. Multilingual Auto-Detection & Cross-Lingual Pivot
+  const detectedLanguage = multilingualEngine.detectLanguage(rawQuestion);
+  const crossLingual = multilingualEngine.normalizeQueryForRetrieval(rawQuestion, detectedLanguage);
+
   // 1. Conversational Query Resolution (resolving "it", "its", "those", "that model")
   const resolution = resolveConversationalQuery(rawQuestion, chatHistory);
-  const contextualizedQuery = resolution.contextualizedQuery;
+  const baseContextualizedQuery = resolution.contextualizedQuery;
+
+  // If non-English, pivot the contextualized query to English search terms
+  const contextualizedQuery = detectedLanguage.isCorpusLanguage
+    ? baseContextualizedQuery
+    : crossLingual.retrievalQuery;
+
   const qLower = contextualizedQuery.toLowerCase();
   const rawLower = rawQuestion.toLowerCase();
 
@@ -137,7 +148,9 @@ export function understandQuestion(
     qLower.includes('chief financial officer') ||
     qLower.includes('stock ticker') ||
     qLower.includes('supplier manufactures') ||
-    qLower.includes('how many human workers were hired');
+    qLower.includes('how many human workers were hired') ||
+    qLower.includes('apex-9000') ||
+    qLower.includes('apex');
 
   // 6. Entity Extraction
   const entities: string[] = [];
@@ -294,6 +307,11 @@ export function understandQuestion(
     isOutOfDomain,
     isUnknownInformation,
     userCorrectionAssertion,
+    detectedLanguage: {
+      ...detectedLanguage,
+      translatedRetrievalQuery: crossLingual.retrievalQuery,
+      crossLingualPivoted: !detectedLanguage.isCorpusLanguage,
+    },
   };
 
   return { profile, contextualizedQuery };

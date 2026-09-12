@@ -67,19 +67,20 @@ export class ComplexPdfParser {
    * Parse a raw text stream or page collection into structured layout elements
    */
   public parseDocumentPages(
-    filename: string,
-    pages: Array<{ pageNumber: number; text: string }>
+    filename: string = 'Document',
+    pages: Array<{ pageNumber: number; text?: string; content?: string }> = []
   ): ComplexPdfParseResult {
     const tables: ExtractedStructuredTable[] = [];
     const specs: ExtractedKeyValueSpec[] = [];
     const outline: DocumentSectionNode[] = [];
-    let docTitle = filename.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ');
+    const safeFilename = filename || 'Document';
+    let docTitle = safeFilename.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ');
 
     let currentL1Section: DocumentSectionNode | null = null;
     let currentL2Section: DocumentSectionNode | null = null;
 
     pages.forEach((page) => {
-      const pageText = page.text || '';
+      const pageText = page.text || page.content || '';
       const reconstructedPage = this.reconstructColumnFlow(pageText);
 
       // Extract tables on this page

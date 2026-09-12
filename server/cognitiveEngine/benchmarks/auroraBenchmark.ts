@@ -225,3 +225,141 @@ export async function runAurora24Benchmark(): Promise<{
     results,
   };
 }
+
+export interface MultilingualBenchmarkResultItem {
+  id: number;
+  language: string;
+  languageCode: string;
+  question: string;
+  expectedFact: string;
+  actualAnswer: string;
+  detectedLanguage?: string;
+  groundingPassed: boolean;
+  citationCount: number;
+}
+
+export async function runMultilingualBenchmark(): Promise<{
+  totalTests: number;
+  passedTests: number;
+  passRate: number;
+  results: MultilingualBenchmarkResultItem[];
+}> {
+  const doc = await getDoc();
+
+  const testCases = [
+    {
+      id: 1,
+      language: 'Spanish',
+      languageCode: 'es',
+      q: '¿Cuántos robots activos operan actualmente en Aurora Robotics?',
+      exp: '300',
+    },
+    {
+      id: 2,
+      language: 'French',
+      languageCode: 'fr',
+      q: 'Combien de robots AR-40 fonctionnent dans la flotte?',
+      exp: '50',
+    },
+    {
+      id: 3,
+      language: 'German',
+      languageCode: 'de',
+      q: 'Welche Höchstgeschwindigkeit erreicht das Robotermodell AR-40 in offenen Fahrspuren?',
+      exp: '2.5',
+    },
+    {
+      id: 4,
+      language: 'Italian',
+      languageCode: 'it',
+      q: "Qual è la capacità di carico dell'AR-40?",
+      exp: '40',
+    },
+    {
+      id: 5,
+      language: 'Portuguese',
+      languageCode: 'pt',
+      q: 'Quantos robôs estão operando fora de Singapura?',
+      exp: '100',
+    },
+    {
+      id: 6,
+      language: 'Chinese',
+      languageCode: 'zh',
+      q: 'Aurora Robotics 目前总共有多少台活跃机器人？',
+      exp: '300',
+    },
+    {
+      id: 7,
+      language: 'Japanese',
+      languageCode: 'ja',
+      q: '人間作業員エリアでの最高速度制限は何ですか？',
+      exp: '1.0',
+    },
+    {
+      id: 8,
+      language: 'Spanish (Arithmetic)',
+      languageCode: 'es',
+      q: 'Calcula la capacidad combinada de batería de AR-10 y AR-40.',
+      exp: '16.5',
+    },
+    {
+      id: 9,
+      language: 'German (Multi-Hop)',
+      languageCode: 'de',
+      q: 'Welches Lagerhaus hat die zweitgrößte Roboterflotte?',
+      exp: 'Singapore North',
+    },
+    {
+      id: 10,
+      language: 'Spanish (Abstention)',
+      languageCode: 'es',
+      q: '¿Cuál es la química de la batería del robot Apex-9000?',
+      exp: 'INSUFICIENTE',
+    },
+  ];
+
+  const results: MultilingualBenchmarkResultItem[] = [];
+
+  for (const tc of testCases) {
+    const res = await knowledgeCognitiveEngine.answerQuestion({
+      question: tc.q,
+      documents: [doc],
+      forceDeterministic: true,
+    });
+
+    const lowerAns = res.answer.toLowerCase();
+    const passed =
+      lowerAns.includes(tc.exp.toLowerCase()) ||
+      (tc.exp === 'INSUFICIENTE' &&
+        (!res.isFoundInDocuments ||
+          lowerAns.includes('insuficiente') ||
+          lowerAns.includes('insufficient') ||
+          lowerAns.includes("couldn't find") ||
+          lowerAns.includes('no se encuentra') ||
+          lowerAns.includes('unconfirmed')));
+
+    results.push({
+      id: tc.id,
+      language: tc.language,
+      languageCode: tc.languageCode,
+      question: tc.q,
+      expectedFact: tc.exp,
+      actualAnswer: res.answer,
+      detectedLanguage: (res.diagnosticTrace as any)?.questionUnderstandingProfile?.detectedLanguage?.languageName || tc.language,
+      groundingPassed: passed,
+      citationCount: res.sources.length,
+    });
+  }
+
+  const passedTests = results.filter((r) => r.groundingPassed).length;
+  const passRate = Math.round((passedTests / results.length) * 100);
+
+  return {
+    totalTests: results.length,
+    passedTests,
+    passRate,
+    results,
+  };
+}
+

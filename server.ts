@@ -53,7 +53,7 @@ import { adaptiveStrategyPlanner } from './server/mediator/adaptiveStrategyPlann
 import { adaptiveDisagreementDetector } from './server/mediator/adaptiveDisagreementDetector.js';
 import { independentVerifier } from './server/mediator/independentVerifier.js';
 import { knowledgeCognitiveEngine } from './server/cognitiveEngine/knowledgeCognitiveEngine.js';
-import { runAurora24Benchmark } from './server/cognitiveEngine/benchmarks/auroraBenchmark.js';
+import { runAurora24Benchmark, runMultilingualBenchmark } from './server/cognitiveEngine/benchmarks/auroraBenchmark.js';
 import { runGolden220Benchmark } from './server/cognitiveEngine/benchmarks/golden200Benchmark.js';
 import { cognitiveTelemetryStore } from './server/cognitiveEngine/cognitiveTelemetryStore.js';
 import { knowledgeGraphEngine } from './server/cognitiveEngine/knowledgeGraphEngine.js';
@@ -2699,6 +2699,7 @@ app.get('/api/v1/rag/telemetry/stats', (req, res) => {
 // In-memory cache for benchmark runs
 let cachedAuroraBenchmark: any = null;
 let cachedGoldenBenchmark: any = null;
+let cachedMultilingualBenchmark: any = null;
 let defaultCognitiveDoc: any = null;
 
 async function getDefaultCognitiveDoc() {
@@ -2794,6 +2795,30 @@ app.get('/api/v1/cognitive/benchmarks/golden', async (req, res) => {
       cachedGoldenBenchmark = { ...benchmark, timestamp: Date.now() };
     }
     res.json({ success: true, benchmark: cachedGoldenBenchmark });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3b. Multilingual Cross-Lingual Evaluation Benchmark
+app.post('/api/v1/cognitive/benchmarks/multilingual', async (req, res) => {
+  try {
+    const benchmark = await runMultilingualBenchmark();
+    cachedMultilingualBenchmark = { ...benchmark, timestamp: Date.now() };
+    res.json({ success: true, benchmark: cachedMultilingualBenchmark });
+  } catch (err: any) {
+    console.error('Multilingual benchmark error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to run Multilingual benchmark' });
+  }
+});
+
+app.get('/api/v1/cognitive/benchmarks/multilingual', async (req, res) => {
+  try {
+    if (!cachedMultilingualBenchmark) {
+      const benchmark = await runMultilingualBenchmark();
+      cachedMultilingualBenchmark = { ...benchmark, timestamp: Date.now() };
+    }
+    res.json({ success: true, benchmark: cachedMultilingualBenchmark });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

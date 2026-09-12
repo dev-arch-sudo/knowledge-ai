@@ -49,6 +49,16 @@ export type HierarchicalLevel =
   | 'SEMANTIC_CHUNK'    // Level 3
   | 'FACT_RECORD';      // Level 4 (fine-grained table row or atomic fact)
 
+export interface LanguageDetectionResult {
+  languageCode: string; // 'en', 'es', 'fr', 'de', 'zh', 'ja', 'hi', 'ar', 'pt', 'it', 'ru', etc.
+  languageName: string; // 'English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Hindi', etc.
+  confidence: number;   // 0.0 to 1.0
+  script: string;       // 'Latin', 'Han', 'Hiragana/Katakana', 'Devanagari', 'Arabic', 'Cyrillic', etc.
+  isCorpusLanguage: boolean; // true if already matches document corpus language ('en')
+  translatedRetrievalQuery?: string; // English normalized query for searching corpus
+  crossLingualPivoted?: boolean;
+}
+
 export interface QuestionUnderstandingProfile {
   normalizedQuestion: string;
   classification: QuestionClassificationType;
@@ -68,6 +78,7 @@ export interface QuestionUnderstandingProfile {
   isOutOfDomain: boolean;
   isUnknownInformation: boolean;
   userCorrectionAssertion?: string;
+  detectedLanguage?: LanguageDetectionResult;
 }
 
 export interface InformationNeedPlan {
@@ -216,6 +227,9 @@ export interface CognitiveExecutionTrace {
     formattedFormula: string;
     stepByStepProof: string;
   };
+  detectedLanguage?: LanguageDetectionResult;
+  reRetrievalExecuted?: boolean;
+  reRetrievalAttempts?: number;
   claims: ClaimVerificationItem[];
   allClaimsSupported: boolean;
   groundingScore: number;
@@ -245,4 +259,99 @@ export interface CognitiveAnswerResult {
   isFoundInDocuments: boolean;
   engineUsed: 'gemini-3.8-flash' | 'cognitive-deterministic-engine';
   diagnosticTrace: CognitiveExecutionTrace;
+}
+
+// ==========================================
+// 5-STAGE PIPELINE COORDINATION INTERFACES
+// Understand -> Plan -> Retrieve -> Verify -> Synthesize
+// ==========================================
+
+export interface CognitiveContext {
+  tenantId: string;
+  knowledgeBaseId: string;
+  requestId: string;
+  chatHistory: any[];
+  forceDeterministic?: boolean;
+  documents?: KnowledgeDocument[];
+}
+
+export interface GovernanceValidationResult {
+  isAllowed: boolean;
+  tenantId: string;
+  policyEnforced: boolean;
+  auditActionRecorded: boolean;
+  violationReason?: string;
+  securityPolicies: {
+    enforceGroundingBoundary: boolean;
+    blockExternalAiStateMutation: boolean;
+  };
+}
+
+export interface UnderstandStageResult {
+  profile: QuestionUnderstandingProfile;
+  contextualizedQuery: string;
+  governance: GovernanceValidationResult;
+  timingMs: number;
+}
+
+export interface PlanStageResult {
+  plan: InformationNeedPlan;
+  timingMs: number;
+}
+
+export interface RetrieveStageResult {
+  fusedItems: FusedEvidenceItem[];
+  rerankedItems: RerankedEvidenceItem[];
+  graphResult: {
+    matchedNodes: any[];
+    connectedEdges: any[];
+    pathExplanations: string[];
+  };
+  structuredTables: any[];
+  subordinateRetrieval?: {
+    candidatesCount: number;
+    rerankedCount: number;
+    sufficiencyScore: number;
+  };
+  timingMs: number;
+}
+
+export interface VerifyStageResult {
+  sufficiency: {
+    isSufficient: boolean;
+    reason: string;
+    sufficiencyScore: number;
+  };
+  correctiveAssessment?: {
+    grade: string;
+    confidenceScore?: number;
+    confidence?: number;
+    gapAnalysis?: string[];
+    correctiveQueries?: string[];
+    contradictionResolution?: {
+      conflictingStatements: string[];
+      authoritativeResolution: string;
+      reason: string;
+    };
+    reconciledFacts?: string[];
+  };
+  subordinateSufficiency?: {
+    isSufficient: boolean;
+    sufficiencyScore: number;
+    reason: string;
+  };
+  isContradiction: boolean;
+  proceedToSynthesis: boolean;
+  timingMs: number;
+}
+
+export interface SynthesizeStageResult {
+  answer: string;
+  engineUsed: 'gemini-3.8-flash' | 'cognitive-deterministic-engine';
+  claims: ClaimVerificationItem[];
+  allClaimsSupported: boolean;
+  groundingScore: number;
+  citations: Citation[];
+  mathResult?: any;
+  timingMs: number;
 }

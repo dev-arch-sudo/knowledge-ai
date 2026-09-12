@@ -23,8 +23,8 @@ export class HierarchicalDocumentIndex {
   public indexDocument(tenantId: string, kbId: string, doc: KnowledgeDocument): void {
     const key = `${tenantId}:${kbId}`;
     const docChunks: HierarchicalChunk[] = [];
-    const docId = doc.id;
-    const docName = doc.filename;
+    const docId = doc.id || `doc_${Date.now()}`;
+    const docName = doc.filename || (doc as any).name || 'Document.pdf';
 
     // --- LEVEL 1: Document Overview ---
     const level1Chunk: HierarchicalChunk = {
