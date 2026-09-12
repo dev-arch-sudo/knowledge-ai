@@ -9,7 +9,7 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -34,3 +34,13 @@ jobs:
 
       - name: Unseen-corpus effectiveness benchmark
         run: npm run benchmark:unseen
+
+      - name: Live Gemini unseen-corpus benchmark
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "LIVE_GEMINI_BENCHMARK_SKIPPED: GEMINI_API_KEY repository secret is not configured."
+            exit 0
+          fi
+          npm run benchmark:unseen:gemini

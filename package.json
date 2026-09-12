@@ -9,7 +9,8 @@
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit",
     "check:benchmark-leakage": "node scripts/check-benchmark-leakage.mjs",
-    "benchmark:unseen": "tsx scripts/run-unseen-benchmark.ts"
+    "benchmark:unseen": "tsx scripts/run-unseen-benchmark.ts",
+    "benchmark:unseen:gemini": "tsx scripts/run-live-gemini-benchmark.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
