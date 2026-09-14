@@ -38,6 +38,9 @@ jobs:
       - name: Deterministic synthesis guard
         run: npx tsx scripts/check-deterministic-synthesis.ts
 
+      - name: Ranked retrieval benchmark
+        run: npm run benchmark:retrieval
+
       - name: Unseen-corpus effectiveness benchmark
         run: npm run benchmark:unseen
 
