@@ -11,8 +11,9 @@
  * 5. Evidence Sufficiency Gating
  * 6. Evidence-First Answer Generation (Gemini 3.8-flash or local deterministic engine)
  * 7. Claim-Level Grounding Verification
- * 8. Verifiable Citations with Document, Page, Section, and Snippet
- * 9. Diagnostic Telemetry Recording
+ * 8. Hard post-generation grounding gate with one evidence-only repair attempt
+ * 9. Verifiable Citations with Document, Page, Section, and Snippet
+ * 10. Diagnostic Telemetry Recording
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -22,9 +23,9 @@ import {
   hybridRagIndex,
   rerankCandidates,
   checkEvidenceSufficiency,
-  verifyClaimsAgainstEvidence,
 } from './ragPipeline.js';
 import { generateEvidenceFirstAnswer } from './ragGenerator.js';
+import { enforceGroundingGuard } from './groundingGuard.js';
 import { ragTelemetryStore, RetrievalDiagnosticTrace, RagFailureClassification } from './ragTelemetryStore.js';
 
 let genAIClient: GoogleGenAI | null = null;
@@ -144,10 +145,10 @@ export async function answerQuestionWithGroundedDocs(
   // 3. Multi-Tenant Hybrid Document Indexing
   hybridRagIndex.indexDocuments(processedDocs, tenantId, knowledgeBaseId);
 
-  // 4. First-Stage Fresh Retrieval (BM25 + Semantic + Exact Entity Matching)
+  // 4. First-Stage Fresh Retrieval (current heuristic lexical/entity/number/phrase retrieval)
   const candidates = hybridRagIndex.search(retrievalQuery, tenantId, knowledgeBaseId, 12);
 
-  // 5. Second-Stage Multi-Factor Reranking
+  // 5. Second-Stage Multi-Factor Heuristic Reranking
   const reranked = rerankCandidates(retrievalQuery, candidates, 5);
 
   // 6. Evidence Sufficiency Gating
@@ -243,7 +244,7 @@ export async function answerQuestionWithGroundedDocs(
 Your ONLY source of authoritative truth is the RETRIEVED AUTHORITATIVE EVIDENCE CHUNKS.
 Do NOT use pretrained general knowledge or extrapolate facts not present in the evidence.
 If the evidence does NOT contain the exact answer, refuse by setting isFoundInDocuments to false.
-Preserve exact entity names (e.g., AR-40, Singapore Central Logistics Hub) and exact numerical quantities.
+Preserve exact entity names and exact numerical quantities.
 ${styleInstruction}
 Return response in strict JSON:
 {
@@ -288,7 +289,6 @@ Return response in strict JSON:
         answerText = parsed.answer;
         engineUsed = 'gemini-3.8-flash';
       } else {
-        // Fallback to deterministic synthesizer
         const genResult = generateEvidenceFirstAnswer(retrievalQuery, reranked, specializedAi, memoryContext);
         answerText = genResult.answer;
         engineUsed = 'grounded-local-engine';
@@ -300,29 +300,45 @@ Return response in strict JSON:
       engineUsed = 'grounded-local-engine';
     }
   } else {
-    // Deterministic evidence-first generation
     const genResult = generateEvidenceFirstAnswer(retrievalQuery, reranked, specializedAi, memoryContext);
     answerText = genResult.answer;
     engineUsed = 'grounded-local-engine';
   }
 
-  // 8. Claim-Level Grounding Verification
-  const claimCheck = verifyClaimsAgainstEvidence(answerText, reranked);
+  // 8. Hard post-generation grounding boundary.
+  // Retrieval sufficiency alone does not make a generated answer trustworthy.
+  // If verification fails, attempt one deterministic evidence-only repair and
+  // verify that repair. If it still fails, abstain instead of returning the claim.
+  const groundingDecision = enforceGroundingGuard({
+    generatedAnswer: answerText,
+    rerankedEvidence: reranked,
+    repairAnswer: () =>
+      generateEvidenceFirstAnswer(retrievalQuery, reranked, specializedAi, memoryContext).answer,
+  });
 
-  // 9. Structured Verifiable Citations
-  const sources: Citation[] = reranked.slice(0, 3).map((item) => ({
-    documentId: item.chunk.documentId,
-    documentName: item.chunk.documentName,
-    pageNumber: item.chunk.pageNumber,
-    sectionHeading: item.chunk.sectionTitle,
-    snippet: item.chunk.text.substring(0, 200),
-  }));
+  answerText = groundingDecision.answer;
+  if (groundingDecision.action === 'REPAIR') {
+    engineUsed = 'grounded-local-engine';
+  }
+
+  const claimCheck = groundingDecision.claimCheck;
+  const isFoundInDocuments = groundingDecision.isFoundInDocuments;
+
+  // 9. Structured citations are exposed only for a grounded final answer.
+  const sources: Citation[] = isFoundInDocuments
+    ? reranked.slice(0, 3).map((item) => ({
+        documentId: item.chunk.documentId,
+        documentName: item.chunk.documentName,
+        pageNumber: item.chunk.pageNumber,
+        sectionHeading: item.chunk.sectionTitle,
+        snippet: item.chunk.text.substring(0, 200),
+      }))
+    : [];
 
   // 10. Record Telemetry Diagnostic Trace
-  let failureClassification: RagFailureClassification = 'NONE_SUCCESS';
-  if (claimCheck.unsupportedClaims.length > 0) {
-    failureClassification = 'GROUNDING_FAILURE';
-  }
+  const failureClassification: RagFailureClassification = isFoundInDocuments
+    ? 'NONE_SUCCESS'
+    : 'GROUNDING_FAILURE';
 
   const trace: RetrievalDiagnosticTrace = {
     id: 'trace_' + Date.now(),
@@ -333,7 +349,11 @@ Return response in strict JSON:
     originalQuestion: question,
     contextualizedQuery: retrievalQuery,
     queryType: resolution.queryType,
-    resolutionExplanation: resolution.resolutionExplanation,
+    resolutionExplanation: groundingDecision.action === 'REPAIR'
+      ? `${resolution.resolutionExplanation} Final provider answer required evidence-only repair before release.`
+      : groundingDecision.action === 'REFUSE'
+        ? `${resolution.resolutionExplanation} Final answer failed claim verification and was refused.`
+        : resolution.resolutionExplanation,
     retrievedCandidateCount: candidates.length,
     candidateChunks: candidates.map((c) => ({
       chunkId: c.chunk.chunkId,
@@ -364,10 +384,10 @@ Return response in strict JSON:
     })),
     evidenceSufficiency: sufficiency,
     finalAnswer: answerText,
-    isFoundInDocuments: true,
+    isFoundInDocuments,
     groundingScore: claimCheck.groundingScore,
     claimVerifications: claimCheck.verifications,
-    unsupportedClaims: claimCheck.unsupportedClaims,
+    unsupportedClaims: isFoundInDocuments ? [] : groundingDecision.originalUnsupportedClaims,
     citations: sources.map((s) => ({
       documentName: s.documentName,
       pageNumber: typeof s.pageNumber === 'number' ? s.pageNumber : 1,
@@ -383,7 +403,7 @@ Return response in strict JSON:
   return {
     answer: answerText,
     sources,
-    isFoundInDocuments: true,
+    isFoundInDocuments,
     engineUsed,
     diagnosticTrace: trace,
   };

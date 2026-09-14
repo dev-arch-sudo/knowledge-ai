@@ -38,6 +38,9 @@ jobs:
       - name: Deterministic synthesis guard
         run: npx tsx scripts/check-deterministic-synthesis.ts
 
+      - name: Post-generation grounding gate
+        run: npm run check:grounding-gate
+
       - name: Unseen-corpus effectiveness benchmark
         run: npm run benchmark:unseen
 
