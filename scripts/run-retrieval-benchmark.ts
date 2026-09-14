@@ -15,6 +15,52 @@ const KB_ID = 'retrieval_benchmark_kb';
 const CANDIDATE_K = 20;
 const RERANK_K = 10;
 
+type RankedResultSummary = {
+  rank: number;
+  documentName: string;
+  pageNumber: number;
+  sectionTitle: string;
+  rerankScore: number;
+  snippet: string;
+  relevant?: boolean;
+};
+
+type AnswerableResult = {
+  id: string;
+  category: string;
+  question: string;
+  shouldHaveEvidence: true;
+  targetCount: number;
+  candidateCount: number;
+  rerankedCount: number;
+  recallAt1: boolean;
+  recallAt5: boolean;
+  recallAt10: boolean;
+  sourceCoverageAt1: number;
+  sourceCoverageAt5: number;
+  sourceCoverageAt10: number;
+  firstRelevantRank: number | null;
+  reciprocalRank: number;
+  expectedSources: RetrievalEvidenceTarget[];
+  topResults: RankedResultSummary[];
+  notes: string;
+};
+
+type UnsupportedResult = {
+  id: string;
+  category: string;
+  question: string;
+  shouldHaveEvidence: false;
+  candidateCount: number;
+  rerankedCount: number;
+  sufficiencySaysAnswerable: boolean;
+  sufficiencyScore: number;
+  topResults: RankedResultSummary[];
+  notes: string;
+};
+
+type BenchmarkResult = AnswerableResult | UnsupportedResult;
+
 function targetMatches(item: RerankedChunk, target: RetrievalEvidenceTarget): boolean {
   if (item.chunk.documentName !== target.documentName) return false;
   if (item.chunk.pageNumber !== target.pageNumber) return false;
@@ -46,7 +92,7 @@ function average(values: number[]): number {
 
 hybridRagIndex.indexDocuments(retrievalBenchmarkDocuments, TENANT_ID, KB_ID);
 
-const results = retrievalBenchmarkCases.map((testCase) => {
+const results: BenchmarkResult[] = retrievalBenchmarkCases.map((testCase): BenchmarkResult => {
   const candidates = hybridRagIndex.search(testCase.question, TENANT_ID, KB_ID, CANDIDATE_K);
   const reranked = rerankCandidates(testCase.question, candidates, RERANK_K);
   const sufficiency = checkEvidenceSufficiency(testCase.question, reranked);
@@ -108,8 +154,8 @@ const results = retrievalBenchmarkCases.map((testCase) => {
   };
 });
 
-const answerable = results.filter((item): item is Extract<typeof item, { shouldHaveEvidence: true }> => item.shouldHaveEvidence === true);
-const unsupported = results.filter((item): item is Extract<typeof item, { shouldHaveEvidence: false }> => item.shouldHaveEvidence === false);
+const answerable = results.filter((item): item is AnswerableResult => item.shouldHaveEvidence);
+const unsupported = results.filter((item): item is UnsupportedResult => !item.shouldHaveEvidence);
 
 const recallAt1 = average(answerable.map((item) => item.recallAt1 ? 1 : 0));
 const recallAt5 = average(answerable.map((item) => item.recallAt5 ? 1 : 0));
