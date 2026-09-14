@@ -56,7 +56,7 @@ export class HuggingFaceBgeSmallEmbeddingProvider implements EmbeddingProvider {
   private async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
     const extractor = await this.getExtractor();
-    const output = await extractor(texts, { pooling: 'mean', normalize: true });
+    const output = await extractor(texts, { pooling: 'cls', normalize: true });
     return this.toVectors(output, texts.length);
   }
 
