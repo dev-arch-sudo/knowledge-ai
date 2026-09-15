@@ -47,6 +47,9 @@ jobs:
       - name: Local BGE dense retrieval experiment
         run: npm run benchmark:retrieval:dense
 
+      - name: Production hybrid retrieval integration benchmark
+        run: npm run benchmark:retrieval:production-hybrid
+
       - name: Unseen-corpus effectiveness benchmark
         run: npm run benchmark:unseen
 
