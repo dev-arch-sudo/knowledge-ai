@@ -21,9 +21,9 @@ import { KnowledgeDocument, Citation, ChatMessage, SpecializedAI } from '../src/
 import { resolveConversationalQuery } from './ragQueryResolver.js';
 import {
   hybridRagIndex,
-  rerankCandidates,
   checkEvidenceSufficiency,
 } from './ragPipeline.js';
+import { productionRetriever } from './retrieval/productionRetriever.js';
 import { generateEvidenceFirstAnswer } from './ragGenerator.js';
 import { enforceGroundingGuard } from './groundingGuard.js';
 import { ragTelemetryStore, RetrievalDiagnosticTrace, RagFailureClassification } from './ragTelemetryStore.js';
@@ -142,14 +142,23 @@ export async function answerQuestionWithGroundedDocs(
   const resolution = resolveConversationalQuery(question, chatHistory);
   const retrievalQuery = resolution.contextualizedQuery;
 
-  // 3. Multi-Tenant Hybrid Document Indexing
+  // 3. Multi-Tenant Document Indexing
   hybridRagIndex.indexDocuments(processedDocs, tenantId, knowledgeBaseId);
 
-  // 4. First-Stage Fresh Retrieval (current heuristic lexical/entity/number/phrase retrieval)
-  const candidates = hybridRagIndex.search(retrievalQuery, tenantId, knowledgeBaseId, 12);
-
-  // 5. Second-Stage Multi-Factor Heuristic Reranking
-  const reranked = rerankCandidates(retrievalQuery, candidates, 5);
+  // 4-5. Fresh retrieval + reranking through the guarded production boundary.
+  // Default remains heuristic. Set KNOWLEDGE_AI_RETRIEVAL_MODE=hybrid to enable
+  // heuristic + local BGE dense retrieval with reciprocal-rank fusion. Any dense
+  // model/index failure falls back to the existing heuristic path.
+  const retrieval = await productionRetriever.retrieve(retrievalQuery, tenantId, knowledgeBaseId, {
+    candidateK: 12,
+    fusionK: 20,
+    evidenceK: 5,
+  });
+  const candidates = retrieval.candidates;
+  const reranked = retrieval.reranked;
+  const retrievalModeNote = retrieval.effectiveMode === 'heuristic-fallback'
+    ? ` Retrieval mode: heuristic-fallback (${retrieval.fallbackReason || 'dense retrieval unavailable'}).`
+    : ` Retrieval mode: ${retrieval.effectiveMode}.`;
 
   // 6. Evidence Sufficiency Gating
   const sufficiency = checkEvidenceSufficiency(retrievalQuery, reranked);
@@ -166,7 +175,7 @@ export async function answerQuestionWithGroundedDocs(
       originalQuestion: question,
       contextualizedQuery: retrievalQuery,
       queryType: resolution.queryType,
-      resolutionExplanation: resolution.resolutionExplanation,
+      resolutionExplanation: `${resolution.resolutionExplanation}${retrievalModeNote}`,
       retrievedCandidateCount: candidates.length,
       candidateChunks: candidates.map((c) => ({
         chunkId: c.chunk.chunkId,
@@ -350,10 +359,10 @@ Return response in strict JSON:
     contextualizedQuery: retrievalQuery,
     queryType: resolution.queryType,
     resolutionExplanation: groundingDecision.action === 'REPAIR'
-      ? `${resolution.resolutionExplanation} Final provider answer required evidence-only repair before release.`
+      ? `${resolution.resolutionExplanation}${retrievalModeNote} Final provider answer required evidence-only repair before release.`
       : groundingDecision.action === 'REFUSE'
-        ? `${resolution.resolutionExplanation} Final answer failed claim verification and was refused.`
-        : resolution.resolutionExplanation,
+        ? `${resolution.resolutionExplanation}${retrievalModeNote} Final answer failed claim verification and was refused.`
+        : `${resolution.resolutionExplanation}${retrievalModeNote}`,
     retrievedCandidateCount: candidates.length,
     candidateChunks: candidates.map((c) => ({
       chunkId: c.chunk.chunkId,
