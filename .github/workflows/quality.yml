@@ -9,7 +9,7 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
@@ -43,6 +43,9 @@ jobs:
 
       - name: Retrieval quality benchmark
         run: npm run benchmark:retrieval
+
+      - name: Local BGE dense retrieval experiment
+        run: npm run benchmark:retrieval:dense
 
       - name: Unseen-corpus effectiveness benchmark
         run: npm run benchmark:unseen

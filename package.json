@@ -11,11 +11,13 @@
     "check:benchmark-leakage": "node scripts/check-benchmark-leakage.mjs",
     "check:grounding-gate": "tsx scripts/check-grounding-gate.ts",
     "benchmark:retrieval": "tsx scripts/run-retrieval-benchmark.ts",
+    "benchmark:retrieval:dense": "tsx scripts/run-embedding-retrieval-benchmark.ts",
     "benchmark:unseen": "tsx scripts/run-unseen-benchmark.ts",
     "benchmark:unseen:gemini": "tsx scripts/run-live-gemini-benchmark.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
+    "@huggingface/transformers": "^3.8.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
