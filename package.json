@@ -13,6 +13,7 @@
     "check:retrieval:hybrid-boundary": "tsx scripts/check-hybrid-retrieval-boundary.ts",
     "benchmark:retrieval": "tsx scripts/run-retrieval-benchmark.ts",
     "benchmark:retrieval:dense": "tsx scripts/run-embedding-retrieval-benchmark.ts",
+    "benchmark:retrieval:full-pipeline-hybrid": "tsx scripts/run-full-pipeline-hybrid-eval.ts",
     "benchmark:unseen": "tsx scripts/run-unseen-benchmark.ts",
     "benchmark:unseen:gemini": "tsx scripts/run-live-gemini-benchmark.ts"
   },
