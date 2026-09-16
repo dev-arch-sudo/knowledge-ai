@@ -50,6 +50,9 @@ jobs:
       - name: Hybrid retrieval boundary guard
         run: npm run check:retrieval:hybrid-boundary
 
+      - name: Full-pipeline hybrid retrieval evaluation
+        run: npm run benchmark:retrieval:full-pipeline-hybrid
+
       - name: Unseen-corpus effectiveness benchmark
         run: npm run benchmark:unseen
 
