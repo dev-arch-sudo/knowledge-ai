@@ -35,6 +35,7 @@ interface MetricSet {
 const TENANT_ID = 'production_hybrid_benchmark_tenant';
 const KB_ID = 'production_hybrid_benchmark_kb';
 const CASES_PATH = path.join(process.cwd(), 'benchmarks', 'retrieval', 'retrieval-cases.json');
+const EPSILON = 1e-9;
 
 function normalize(text: string): string {
   return text
@@ -113,6 +114,14 @@ function summarize(results: MetricSet[]): MetricSet {
     mrr: average(results.map((item) => item.mrr)),
     ndcgAt10: average(results.map((item) => item.ndcgAt10)),
   };
+}
+
+function assertNotWorse(label: string, hybrid: number, heuristic: number): void {
+  if (hybrid + EPSILON < heuristic) {
+    throw new Error(
+      `PRODUCTION_HYBRID_REGRESSION:${label}:hybrid=${hybrid.toFixed(6)}:heuristic=${heuristic.toFixed(6)}`
+    );
+  }
 }
 
 async function buildBenchmarkDocuments() {
@@ -227,6 +236,22 @@ async function run() {
     });
   }
 
+  const heuristicCandidateSummary = summarize(heuristicCandidateMetrics);
+  const hybridCandidateSummary = summarize(hybridCandidateMetrics);
+  const heuristicEvidenceSummary = summarize(heuristicEvidenceMetrics);
+  const hybridEvidenceSummary = summarize(hybridEvidenceMetrics);
+  const heuristicAbstentionRate = noEvidence.length ? heuristicAbstentions / noEvidence.length : 1;
+  const hybridAbstentionRate = noEvidence.length ? hybridAbstentions / noEvidence.length : 1;
+
+  // The integration benchmark is a blocking safety gate, not only a report.
+  // Hybrid must preserve retrieval coverage through the production reranker and
+  // must not weaken the existing no-evidence abstention behavior on this frozen corpus.
+  assertNotWorse('candidate_recall_at_5', hybridCandidateSummary.recallAt5, heuristicCandidateSummary.recallAt5);
+  assertNotWorse('candidate_recall_at_10', hybridCandidateSummary.recallAt10, heuristicCandidateSummary.recallAt10);
+  assertNotWorse('final_evidence_recall_at_5', hybridEvidenceSummary.recallAt5, heuristicEvidenceSummary.recallAt5);
+  assertNotWorse('final_evidence_recall_at_10', hybridEvidenceSummary.recallAt10, heuristicEvidenceSummary.recallAt10);
+  assertNotWorse('no_evidence_abstention', hybridAbstentionRate, heuristicAbstentionRate);
+
   const summary = {
     benchmark: 'project-sample-documents-production-hybrid-v1',
     totalCases: cases.length,
@@ -240,17 +265,24 @@ async function run() {
       hybridFeatureBoundary: 'KNOWLEDGE_AI_RETRIEVAL_MODE=hybrid',
     },
     firstStageCandidates: {
-      heuristic: summarize(heuristicCandidateMetrics),
-      hybrid: summarize(hybridCandidateMetrics),
+      heuristic: heuristicCandidateSummary,
+      hybrid: hybridCandidateSummary,
     },
     finalEvidenceAfterRerank: {
-      heuristic: summarize(heuristicEvidenceMetrics),
-      hybrid: summarize(hybridEvidenceMetrics),
+      heuristic: heuristicEvidenceSummary,
+      hybrid: hybridEvidenceSummary,
       note: 'Only five evidence chunks are retained in production, so Recall@10 equals Recall@5 for this stage.',
     },
     noEvidenceAbstention: {
-      heuristic: noEvidence.length ? heuristicAbstentions / noEvidence.length : 1,
-      hybrid: noEvidence.length ? hybridAbstentions / noEvidence.length : 1,
+      heuristic: heuristicAbstentionRate,
+      hybrid: hybridAbstentionRate,
+    },
+    regressionGuard: {
+      candidateRecallAt5NotWorse: true,
+      candidateRecallAt10NotWorse: true,
+      finalEvidenceRecallAt5NotWorse: true,
+      finalEvidenceRecallAt10NotWorse: true,
+      noEvidenceAbstentionNotWorse: true,
     },
     boundaries: [
       'Hybrid mode uses local BGE + RRF and then the existing heuristic reranker.',
