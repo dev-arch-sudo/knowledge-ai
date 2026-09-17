@@ -2,7 +2,7 @@ name: Quality Gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, retrieval/promote-hybrid-production-v2]
   pull_request:
     branches: [main]
 
