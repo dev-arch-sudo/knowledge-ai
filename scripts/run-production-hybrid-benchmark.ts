@@ -116,8 +116,12 @@ function summarize(results: MetricSet[]): MetricSet {
   };
 }
 
+function isNotWorse(hybrid: number, heuristic: number): boolean {
+  return hybrid + EPSILON >= heuristic;
+}
+
 function assertNotWorse(label: string, hybrid: number, heuristic: number): void {
-  if (hybrid + EPSILON < heuristic) {
+  if (!isNotWorse(hybrid, heuristic)) {
     throw new Error(
       `PRODUCTION_HYBRID_REGRESSION:${label}:hybrid=${hybrid.toFixed(6)}:heuristic=${heuristic.toFixed(6)}`
     );
@@ -243,14 +247,13 @@ async function run() {
   const heuristicAbstentionRate = noEvidence.length ? heuristicAbstentions / noEvidence.length : 1;
   const hybridAbstentionRate = noEvidence.length ? hybridAbstentions / noEvidence.length : 1;
 
-  // The integration benchmark is a blocking safety gate, not only a report.
-  // Hybrid must preserve retrieval coverage through the production reranker and
-  // must not weaken the existing no-evidence abstention behavior on this frozen corpus.
-  assertNotWorse('candidate_recall_at_5', hybridCandidateSummary.recallAt5, heuristicCandidateSummary.recallAt5);
-  assertNotWorse('candidate_recall_at_10', hybridCandidateSummary.recallAt10, heuristicCandidateSummary.recallAt10);
-  assertNotWorse('final_evidence_recall_at_5', hybridEvidenceSummary.recallAt5, heuristicEvidenceSummary.recallAt5);
-  assertNotWorse('final_evidence_recall_at_10', hybridEvidenceSummary.recallAt10, heuristicEvidenceSummary.recallAt10);
-  assertNotWorse('no_evidence_abstention', hybridAbstentionRate, heuristicAbstentionRate);
+  const regressionGuard = {
+    candidateRecallAt5NotWorse: isNotWorse(hybridCandidateSummary.recallAt5, heuristicCandidateSummary.recallAt5),
+    candidateRecallAt10NotWorse: isNotWorse(hybridCandidateSummary.recallAt10, heuristicCandidateSummary.recallAt10),
+    finalEvidenceRecallAt5NotWorse: isNotWorse(hybridEvidenceSummary.recallAt5, heuristicEvidenceSummary.recallAt5),
+    finalEvidenceRecallAt10NotWorse: isNotWorse(hybridEvidenceSummary.recallAt10, heuristicEvidenceSummary.recallAt10),
+    noEvidenceAbstentionNotWorse: isNotWorse(hybridAbstentionRate, heuristicAbstentionRate),
+  };
 
   const summary = {
     benchmark: 'project-sample-documents-production-hybrid-v1',
@@ -277,13 +280,7 @@ async function run() {
       heuristic: heuristicAbstentionRate,
       hybrid: hybridAbstentionRate,
     },
-    regressionGuard: {
-      candidateRecallAt5NotWorse: true,
-      candidateRecallAt10NotWorse: true,
-      finalEvidenceRecallAt5NotWorse: true,
-      finalEvidenceRecallAt10NotWorse: true,
-      noEvidenceAbstentionNotWorse: true,
-    },
+    regressionGuard,
     boundaries: [
       'Hybrid mode uses local BGE + RRF and then the existing heuristic reranker.',
       'Dense failures must fall back to the existing heuristic path.',
@@ -292,12 +289,23 @@ async function run() {
     ],
   };
 
+  // Always emit the measured behavior before enforcing the blocking assertions.
+  // This keeps failed CI runs diagnosable without weakening any regression guard.
   console.log('PRODUCTION_HYBRID_BENCHMARK_SUMMARY');
   console.log(JSON.stringify(summary, null, 2));
   console.log('PRODUCTION_HYBRID_BENCHMARK_CASES');
   console.log(JSON.stringify(comparisons, null, 2));
   console.log('PRODUCTION_HYBRID_NO_EVIDENCE_CASES');
   console.log(JSON.stringify(noEvidenceComparisons, null, 2));
+
+  // The integration benchmark is a blocking safety gate, not only a report.
+  // Hybrid must preserve retrieval coverage through the production reranker and
+  // must not weaken the existing no-evidence abstention behavior on this frozen corpus.
+  assertNotWorse('candidate_recall_at_5', hybridCandidateSummary.recallAt5, heuristicCandidateSummary.recallAt5);
+  assertNotWorse('candidate_recall_at_10', hybridCandidateSummary.recallAt10, heuristicCandidateSummary.recallAt10);
+  assertNotWorse('final_evidence_recall_at_5', hybridEvidenceSummary.recallAt5, heuristicEvidenceSummary.recallAt5);
+  assertNotWorse('final_evidence_recall_at_10', hybridEvidenceSummary.recallAt10, heuristicEvidenceSummary.recallAt10);
+  assertNotWorse('no_evidence_abstention', hybridAbstentionRate, heuristicAbstentionRate);
 }
 
 run().catch((error) => {
