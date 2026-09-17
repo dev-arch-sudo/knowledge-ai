@@ -95,18 +95,12 @@ export class ProductionRetriever {
       const denseRetriever = await this.getDenseRetriever(tenantId, knowledgeBaseId);
       const denseCandidates = await denseRetriever.search(query, fusionK);
       const fused = reciprocalRankFuse(heuristicCandidates, denseCandidates, fusionK);
-      const maxFusedScore = fused[0]?.score ?? 1;
       const heuristicByChunk = new Map(
         heuristicCandidates.map((candidate) => [candidate.chunk.chunkId, candidate])
-      );
-      const denseByChunk = new Map(
-        denseCandidates.map((candidate) => [candidate.chunk.chunkId, candidate])
       );
 
       const candidates: CandidateChunk[] = fused.slice(0, candidateK).map((item) => {
         const heuristicCandidate = heuristicByChunk.get(item.chunk.chunkId);
-        const denseCandidate = denseByChunk.get(item.chunk.chunkId);
-        const normalizedRrf = maxFusedScore > 0 ? item.score / maxFusedScore : 0;
         const reasons = [
           ...(heuristicCandidate?.matchReasons ?? []),
           `rrf=${item.score.toFixed(5)}`,
@@ -114,12 +108,17 @@ export class ProductionRetriever {
           item.denseRank ? `dense_rank=${item.denseRank}` : 'dense_rank=none',
         ];
 
+        // RRF is a rank-fusion signal only. Preserve the calibrated heuristic
+        // scores used by the existing reranker/evidence-sufficiency gate so a
+        // high fused rank cannot masquerade as answer confidence. Dense-only
+        // rescues intentionally carry zero heuristic confidence until semantic
+        // evidence confidence is separately calibrated and benchmarked.
         return {
           chunk: item.chunk,
-          semanticScore: denseCandidate?.score ?? 0,
+          semanticScore: heuristicCandidate?.semanticScore ?? 0,
           keywordScore: heuristicCandidate?.keywordScore ?? 0,
           exactScore: heuristicCandidate?.exactScore ?? 0,
-          combinedScore: normalizedRrf,
+          combinedScore: heuristicCandidate?.combinedScore ?? 0,
           matchReasons: reasons,
         };
       });
