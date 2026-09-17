@@ -48,13 +48,17 @@ jobs:
         run: npm run benchmark:retrieval:dense
 
       - name: Production hybrid retrieval integration benchmark
-        run: npm run benchmark:retrieval:production-hybrid | tee production-hybrid-benchmark.log
+        run: |
+          set -o pipefail
+          npm run benchmark:retrieval:production-hybrid 2>&1 | tee production-hybrid-benchmark.log
 
       - name: Retain production hybrid benchmark metrics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: production-hybrid-benchmark-metrics
           path: production-hybrid-benchmark.log
+          if-no-files-found: error
           retention-days: 30
 
       - name: Unseen-corpus effectiveness benchmark
